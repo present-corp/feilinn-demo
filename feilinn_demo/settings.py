@@ -26,6 +26,7 @@ TEMPLATE_DEBUG = True
 
 ALLOWED_HOSTS = []
 
+DBNAME = 'feilinn_demo'
 
 # Application definition
 
