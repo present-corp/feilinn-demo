@@ -1,60 +1,34 @@
+# -*- coding: UTF-8 -*-
+'''
+  Copyright (c) 2014 Present Inc.
+'''
+
 from django.template.loader import get_template
 from django.template import Context, Template, RequestContext
 from django.http import HttpResponse
 from django.shortcuts import render, render_to_response
-from feilinn_demo.models import Post
+from feilinn_demo.models import User, Domain
 import datetime
 
-def index_page(request):
-  return render(request, 'feilinn_demo/index.html', '')
+def domain(request):
+    dom_list = {'1', '2', '3', '4', '5', '6', '7', '8'}
+    tri_list = {'q 1', 'q 2', 'q 3'}
+    ship_list = {'title': '领域', 'domain_list' : dom_list, 'question_list': tri_list, 'people_list': tri_list}
+    return render_to_response('domain.html', ship_list, context_instance=RequestContext(request))
+
+def topic(request):
+    ship_list = {'title': '话题'}
+    return render_to_response('topic.html', ship_list,context_instance=RequestContext(request))
+
+'''
+TODO:
 
 def index(request):
-    if request.method == 'POST':
-       # save new post
-       title = request.POST['title']
-       content = request.POST['content']
+    return render_to_response('index.html', context_instance=RequestContext(request))
 
-       post = Post(title=title)
-       post.last_update = datetime.datetime.now() 
-       post.content = content
-       post.save()
+def register(request):
+    return render_to_response('register.html', context_instance=RequestContext(request))
 
-    # Get all posts from DB
-    posts = Post.objects 
-    return render_to_response('feilinn_demo/index_s.html', {'Posts': posts},
-                              context_instance=RequestContext(request))
-
-
-def update(request):
-    id = eval("request." + request.method + "['id']")
-    post = Post.objects(id=id)[0]
-    
-    if request.method == 'POST':
-        # update field values and save to mongo
-        post.title = request.POST['title']
-        post.last_update = datetime.datetime.now() 
-        post.content = request.POST['content']
-        post.save()
-        template = 'feilinn_demo/index_s.html'
-        params = {'Posts': Post.objects} 
-
-    elif request.method == 'GET':
-        template = 'feilinn_demo/update.html'
-        params = {'post':post}
-   
-    return render_to_response(template, params, context_instance=RequestContext(request))
-                              
-
-def delete(request):
-    id = eval("request." + request.method + "['id']")
-
-    if request.method == 'POST':
-        post = Post.objects(id=id)[0]
-        post.delete() 
-        template = 'feilinn_demo/index_s.html'
-        params = {'Posts': Post.objects} 
-    elif request.method == 'GET':
-        template = 'feilinn_demo/delete.html'
-        params = { 'id': id } 
-
-    return render_to_response(template, params, context_instance=RequestContext(request))
+def timeline(request):
+    return render_to_response('timeline.html', {'user': 'do'}, context_instance=RequestContext(request))
+'''

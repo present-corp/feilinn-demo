@@ -1,0 +1,94 @@
+{% load staticfiles %}
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+{% include 'global_base.html' %}
+</head>
+<body>
+<header> 
+{% include 'global_nav.html' %}
+</header>
+<div class="container" style="padding-top:50px;">
+  <div class="clear"></div>
+  <div class="body_topic_box">
+    <section class="body_topic_head">
+    <span class="pull-left" style="width:420px;margin-left:5px;"> <img src="{% static "pic-name-110x110-5.png" %}" alt="..." class="img-circle" width="40" style="float:left;margin:0px;margin-right:5px;">
+    <div class="clear_s"></div>
+    <a href="#" ><font class="body_topic_name"> <a href="#" >周扒皮</a>&nbsp;发起话题</font> </span> <span class="pull-right" style="margin-top:8px;margin-right:5px;"><a href="#" class="font_black">分享到</a> | <a href="#" class="font_black" >提醒关注</a> | <a href="#" class="font_black">关闭</a>
+    </section>
+    <section class="body_topic_body"  >
+      <h3>我们为什么需要科技进步?</h3>
+      <p style="margin-top:15px;"> 曾经看到一句话 “科技的进步都是无人性” 当时不解， 今天仔细想了 一下 细思恐极。
+        科技的进步让人类的存在感越来越弱，这是我的一个中心观点。<br>
+        驾驶是为了体验自己操控飞一般的速度，那么无人驾驶是不是会让人失去这种感觉，从而是被草纵；机械手表是为了表现人类能制造如此精妙的器械，那么冷冰冰的LED是不是消弱人类双手的灵巧性；会面为了体验握手拥抱时的感觉，那么远程视频是为了了见一张脸，是不是会让人变得更加自我和中心呢；人类制造电脑是为了体现自己的逻辑思考能力还是懒惰转移的借口，这样下去是不是会失去这种能力。科技的进步带来方便的同时，我们是不是又在丢弃一些人的天性，最后变成胖子 </p>
+    </section>
+    <section class="body_topic_foot">
+      <span class="pull-left">
+      <img src="{% static "pic-name-110x110-5.png" %}" alt="..." class="img-circle" width="40"  id="body_topc_user_icon">
+      <img src="{% static "pic-name-110x110-5.png" %}" alt="..." class="img-circle" width="40"  id="body_topc_user_icon">
+      <img src="{% static "pic-name-110x110-5.png" %}" alt="..." class="img-circle" width="40"  id="body_topc_user_icon">
+      <img src="{% static "pic-name-110x110-5.png" %}" alt="..." class="img-circle" width="40"  id="body_topc_user_icon">
+      <img src="{% static "pic-name-110x110-5.png" %}" alt="..." class="img-circle" width="40"  id="body_topc_user_icon">
+      </span>
+      <span class="pull-right" >
+      <button type="button" class="btn btn-default btn-sm" style="margin-top:5px;">
+      <span class="glyphicon glyphicon-eye-open"></span> 2131关注 </button>
+      </span>
+    </section>
+    <section class="body_topic_add">
+      <span class="pull-left" >
+        <a href="#" class="body_topic_add_font">42</a> 人参与讨论 | <a href="#" class="font_black">邀请更多人</a></span>
+        <span class="pull-right">
+      <select class="form-control" >
+        <option>按赞同数排序</option>
+        <option>按发布时间排序</option>
+      </select>
+      </span> </section>
+    <section  class="body_topic_item">
+      <img src="{% static "pic-name-110x110-5.png" %}" alt="..." class="img-circle" width="80" style="float:left;">
+      <article class="body_topic_article" >
+        <h4 style="margin-bottom:5px;"><span class="pull-left"><strong>周扒皮</strong> <span class="user_des">Python程序员。</span> </span> <span class="pull-right" style="margin-left:20px;">
+          <button type="button" class="btn btn-default btn-sm" style="margin-top:5px;"> <span class="glyphicon glyphicon-plus"></span> 2323 票 </button>
+          </span> </h4>
+        <span class="user_title">工程师 阿里巴巴集团</span> <span  style="font-size:14px; ">
+        <p class="body_topic_p" > 作为一个想看遍全世界的海的人，来回答一下。图片都是去的地方的亲自实拍。这是悉尼的Bondi Junction。暂时还没空去大堡礁，据说更美。这是泰国的布吉岛。去这里花费不算太大，景色也不错。 </p>
+        <font style="color:#999;" >发表于 12 分钟前｜<a href="#">523</a> 评论｜<a href="#">举报</a> | <a href="#">编辑 </a></font> <br>
+        </span> </article>
+    </section>
+    <section  class="body_topic_item_re"> <img src="{% static "pic-name-110x110-5.png" %}" alt="..." class="img-circle" width="80" style="float:left;">
+      <article class="body_topic_article_re" >
+        <h4 style="margin-bottom:5px;"><span class="pull-left"><strong>周扒皮</strong> <span class="user_des">Python程序员。</span> </span> <span class="pull-right" style="margin-left:20px;">
+          <button type="button" class="btn btn-default btn-sm" style="margin-top:5px;"> <span class="glyphicon glyphicon-plus"></span> 2323 票 </button>
+          </span> </h4>
+        <span class="user_title">工程师 阿里巴巴集团</span> <span  style="font-size:14px; ">
+        <p class="body_topic_p" > 作为一个想看遍全世界的海的人，来回答一下。图片都是去的地方的亲自实拍。这是悉尼的Bondi Junction。暂时还没空去大堡礁，据说更美。这是泰国的布吉岛。去这里花费不算太大，景色也不错。 </p>
+        <font style="color:#999;" >修改于 15 分钟前｜<a href="#">23</a> 评论</font> <br>
+        </span> </article>
+    </section>
+    <div class="clear"></div>
+    <span class="body_topic_form">
+    <div  style="width:92%; float:left; margin-left:15px;">
+      <input type="email" class="form-control" id="inputEmail3" placeholder="添加评论">
+    </div>
+    <div  style="float:left; margin-left:10px;">
+      <button type="submit" class="btn btn-default">添加</button>
+    </div>
+    </span>
+    <div class="clear"></div>
+    <section class="body_topic_foot_re"> <img src="{% static "pic-name-110x110-5.png" %}" alt="..." class="img-circle" width="60" style="float:left;">
+      <article class="body_topic_article_re" >
+        <h4 style="margin-bottom:5px;"><strong>周扒皮</strong> <span class="user_des">Python程序员。</span> </span> </h4>
+        <span class="user_title">工程师 阿里巴巴集团</span> </article>
+    </section>
+  </div>
+</div>
+<div class="clear"></div>
+<footer>
+  <div class="container"> © 2014 Present Inc. </div>
+  <div class="clear"></div>
+</footer>
+
+<script src="http://cdn.bootcss.com/jquery/1.11.1/jquery.min.js"></script>
+<script src="{% static "bootstrap.min.js" %}"></script>
+</body>
+</html>

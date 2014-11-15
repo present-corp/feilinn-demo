@@ -1,12 +1,7 @@
-"""
-Django settings for feilinn_demo project.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/1.7/topics/settings/
-
-For the full list of settings and their values, see
-https://docs.djangoproject.com/en/1.7/ref/settings/
-"""
+# -*- coding: UTF-8 -*-
+'''
+  Copyright (c) 2014 Present Inc.
+'''
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 import os
@@ -33,11 +28,15 @@ DBNAME = 'feilinn_demo'
 INSTALLED_APPS = (
     'django.contrib.admin',
     'django.contrib.auth',
+    #'mongoengine.django.mongo_auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
 )
+
+#AUTH_USER_MODEL = 'mongo_auth.MongoUser'
+#MONGOENGINE_USER_DOCUMENT = 'mongoengine.django.auth.User'
 
 MIDDLEWARE_CLASSES = (
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -49,6 +48,9 @@ MIDDLEWARE_CLASSES = (
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 )
 
+# SESSION_ENGINE = 'mongoengine.django.sessions'
+# SESSION_SERIALIZER = 'mongoengine.django.sessions.BSONSerializer'
+
 ROOT_URLCONF = 'feilinn_demo.urls'
 
 WSGI_APPLICATION = 'feilinn_demo.wsgi.application'
@@ -59,9 +61,13 @@ WSGI_APPLICATION = 'feilinn_demo.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+      'ENGINE': 'django.db.backends.sqlite3',
+      'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
     }
+}
+
+AUTHENTICATION_BACKENDS = {
+    'mongoengine.django.auth.MongoEngineBackend',
 }
 
 # Internationalization
@@ -91,5 +97,10 @@ TEMPLATE_DIRS = (
 STATICFILES_DIRS = (
     os.path.join(BASE_DIR, 'feilinn_demo/static/css'),
     os.path.join(BASE_DIR, 'feilinn_demo/static/img'),
+    os.path.join(BASE_DIR, 'feilinn_demo/static/img/pic-80'),
+    os.path.join(BASE_DIR, 'feilinn_demo/static/img/pic-110'),
+    os.path.join(BASE_DIR, 'feilinn_demo/static/img/pic-name-80'),
+    os.path.join(BASE_DIR, 'feilinn_demo/static/img/pic-name-110'),
+    os.path.join(BASE_DIR, 'feilinn_demo/static/fonts'),
     os.path.join(BASE_DIR, 'feilinn_demo/static/js'),
 )
