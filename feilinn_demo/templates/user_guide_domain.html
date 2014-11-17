@@ -1,0 +1,33 @@
+{% load staticfiles %}
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+{% include 'global_base.html' %}
+</head>
+<body>
+<header>
+{% include "global_nav.html" %}
+</header>
+<div class="container">
+ <div class="reco2_box"><span class="reco_header">
+ <h4 class="reco_h4_c">设置你的首页，关注钟意的领域。</h4>
+ <span class="box_right_title">第二步>></span></span>
+ <section class="reco2_body">
+ <span class="reco2_container">
+ {% for entry in user_guide_domain_list %}
+ {% include 'user_guide_domain_entry.html' %}
+ {% endfor %}    
+ </span>
+ </section>
+ </div>
+</div>
+</div>
+<div class="clear"></div>
+<footer>
+ <div class="container"> © 2014 Present Inc.</div>
+ <div class="clear"></div>
+</footer>
+<script src="http://cdn.bootcss.com/jquery/1.11.1/jquery.min.js"></script>
+<script src="{% static "bootstrap.min.js" %}"></script>
+</body>
+</html>
