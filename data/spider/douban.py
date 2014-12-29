@@ -44,6 +44,185 @@ def parsehtml(url):
     response.close()
     return content
 
+class CelebritySearchPageVisitor(HP.HTMLParser):
+    STATE_IDLE = 0
+    STATE_SEARCH_RESULT = 1
+    STATE_NAME_START = 2
+
+    def __init__(self, html_content):
+        HP.HTMLParser.__init__(self)
+        self.__state = [CelebritySearchPageVisitor.STATE_IDLE]
+        self.__search_result_url = None
+        self.__name = None
+        self.feed(html_content)
+        self.reset()
+    def search_result_url(self):
+        return self.__search_result_url
+    def name(self):
+        return self.__name
+
+    def handle_starttag(self, tag, attrs):
+        attrs_dict = dict(attrs)
+        ltag = tag.lower()
+        last_state = self.__state[-1]
+
+        if ltag == 'h3':
+            self.__state.append(CelebritySearchPageVisitor.STATE_SEARCH_RESULT)
+        elif ltag == 'a':
+            if last_state == CelebritySearchPageVisitor.STATE_SEARCH_RESULT:
+                if "href" in attrs_dict:
+                    self.__search_result_url = attrs_dict["href"]
+                self.__state.append(CelebritySearchPageVisitor.STATE_NAME_START)
+        else:
+            pass
+    def handle_endtag(self, tag):
+        ltag = tag.lower()
+        last_state = self.__state[-1]
+        if ltag == 'h3':
+            if last_state == CelebritySearchPageVisitor.STATE_SEARCH_RESULT:
+                self.__state.pop()
+        elif ltag == 'a':
+            if last_state == CelebritySearchPageVisitor.STATE_NAME_START:
+                self.__state.pop()
+
+    def handle_data(self, data):
+        last_state = self.__state[-1]
+        if last_state == CelebritySearchPageVisitor.STATE_NAME_START:
+            self.__name = data.rstrip().lstrip()
+
+class CelebrityPageVisitor(HP.HTMLParser):
+    __year_only = re.compile(r'(\d\d\d\d)')
+    __full_date = re.compile(r'(\d\d\d\d-\d+-\d+)')
+
+    STATE_IDLE = 0
+    STATE_INFO_START = 1
+    STATE_GET_FIELD = 2
+    STATE_DOB = 3
+    STATE_DOBD = 4
+    STATE_POB = 5
+    STATE_GENDER = 6
+    STATE_IMDB_LINK = 7
+
+    def __init__(self, html_content):
+        HP.HTMLParser.__init__(self)
+        self.__state = [CelebrityPageVisitor.STATE_IDLE]
+        self.__gender = Celebrity.UNKNOWN_GENDER
+        self.__search_result_url = None
+        self.__day_of_birth = None
+        self.__day_of_death = None
+        self.__place_of_birth = None
+        self.__imdb_link = None
+        self.feed(html_content)
+        self.reset()
+
+    def search_result_url(self):
+        return self.__search_result_url
+    def day_of_birth(self):
+        return self.__day_of_birth
+    def day_of_death(self):
+        return self.__day_of_death
+    def place_of_birth(self):
+        return self.__place_of_birth
+    def imdb_link(self):
+        return self.__imdb_link
+    def gender(self):
+        return self.__gender
+
+    def handle_starttag(self, tag, attrs):
+        attrs_dict = dict(attrs)
+        ltag = tag.lower()
+        last_state = self.__state[-1]
+
+        if ltag == 'div':
+            if "class" in attrs_dict and attrs_dict["class"] == 'info':
+                self.__state.append(CelebrityPageVisitor.STATE_INFO_START)
+        elif ltag == 'span':
+            if last_state == CelebrityPageVisitor.STATE_INFO_START:
+                self.__state.append(CelebrityPageVisitor.STATE_GET_FIELD)
+        elif ltag == 'a':
+            if last_state == CelebrityPageVisitor.STATE_IMDB_LINK:
+                if "href" in attrs_dict:
+                    self.__imdb_link = attrs_dict["href"]
+                self.__state.pop()
+        else:
+            pass
+    def handle_endtag(self, tag):
+        ltag = tag.lower()
+        last_state = self.__state[-1]
+        if ltag == 'a':
+            if last_state == CelebrityPageVisitor.STATE_IMDB_LINK:
+                self.__state.pop()
+        elif ltag == 'span':
+            if last_state == CelebrityPageVisitor.STATE_GET_FIELD:
+                self.__state.pop()
+        elif ltag == 'div':
+            if last_state == CelebrityPageVisitor.STATE_INFO_START:
+                self.__state.pop()
+
+    def handle_data(self, data):
+        last_state = self.__state[-1]
+        data = data.lstrip().rstrip()
+        if last_state == CelebrityPageVisitor.STATE_GET_FIELD:
+            if data == u'出生日期':
+                self.__state[-1] = CelebrityPageVisitor.STATE_DOB
+                self.__state.append(CelebrityPageVisitor.STATE_GET_FIELD)
+            elif data == u'生卒日期':
+                self.__state[-1] = CelebrityPageVisitor.STATE_DOBD
+                self.__state.append(CelebrityPageVisitor.STATE_GET_FIELD)
+            elif data == u'出生地':
+                self.__state[-1] = CelebrityPageVisitor.STATE_POB
+                self.__state.append(CelebrityPageVisitor.STATE_GET_FIELD)
+            elif data == u'性别':
+                self.__state[-1] = CelebrityPageVisitor.STATE_GENDER
+                self.__state.append(CelebrityPageVisitor.STATE_GET_FIELD)
+            elif data == u'imdb编号':
+                self.__state[-1] = CelebrityPageVisitor.STATE_IMDB_LINK
+                self.__state.append(CelebrityPageVisitor.STATE_GET_FIELD)
+                pass
+        elif last_state == CelebrityPageVisitor.STATE_DOB:
+            # Format: year or year-month-day
+            matched = CelebrityPageVisitor.__full_date.search(data)
+            if matched is not None:
+                self.__day_of_birth = matched.group(1)
+            else:
+                matched = CelebrityPageVisitor.__year_only.search(data)
+                if matched is not None:
+                    self.__day_of_birth = matched.group(1)
+            # We don't assume every page has date of birth
+            self.__state.pop()
+        elif last_state == CelebrityPageVisitor.STATE_DOBD:
+            # Format: year or year-month-day
+            matched = CelebrityPageVisitor.__full_date.findall(data)
+            if matched is not None:
+                self.__day_of_birth = matched[0]
+                self.__day_of_death = matched[1]
+            else:
+                matched = CelebrityPageVisitor.__year_only.findall(data)
+                if matched is not None:
+                    self.__day_of_birth = matched[0]
+                    self.__day_of_death = matched[1]
+            # We don't assume every page has date of birth
+            self.__state.pop()
+        elif last_state == CelebrityPageVisitor.STATE_POB:
+            if data[0] == u':':
+                self.__place_of_birth = data[1:].lstrip().rstrip()
+            else:
+                self.__place_of_birth = data
+            self.__state.pop()
+        elif last_state == CelebrityPageVisitor.STATE_GENDER:
+            if data.find(u'男'):
+                self.__gender = Celebrity.MALE
+            elif data.find(u'女'):
+                self.__gender = Celebrity.FEMALE
+            else:
+                self.__gender = Celebrity.UNKNOWN_GENDER
+            self.__state.pop()
+        else:
+            pass
+
+
+# TODO: 出生日期 生卒日期两种
+
 class MoviePageVisitor(HP.HTMLParser):
     # State automaton
     STATE_IDLE = 0
@@ -367,14 +546,20 @@ class Celebrity(object):
     __celebrity_url_pattern = \
             re.compile(r"http:\/\/movie\.douban\.com\/celebrity\/([0-9][0-9]*)\/")
     __param_removal_pattern = \
-            re.compile(r"http:\/\/movie\.douban\.com\/celebrity\/([0-9][0-9]*)\/(\?.*)$")
+            re.compile(r"http:\/\/movie\.douban\.com\/celebrity\/([0-9][0-9]*)\/(\?.*)?$")
+    __search_pattern = re.compile(r'\/search\/.*')
 
     DIRECTOR = 1
     SCRIPTWRITER = 2
     ACTOR = 3
-    def __init__(self, douban_url_id):
+
+    FEMALE = 0
+    MALE = 1
+    UNKNOWN_GENDER = 2
+
+    def __init__(self, douban_url_id, fetch_on_init = False):
         """
-        Celebrity.__init__(self, douban_url_id)
+        Celebrity.__init__(self, douban_url_id, fetch_on_init = False)
 
         Create an Celebrity object. In current version, Celebrity object
         does not support fetch() method.
@@ -384,7 +569,13 @@ class Celebrity(object):
         self.__profession = None
         self.__unique_id = None
         self.__day_of_birth = None
+        self.__day_of_death = None
         self.__place_of_birth = None
+        self.__imdb_link = None
+        self.__gender = Celebrity.UNKNOWN_GENDER
+
+        if fetch_on_init:
+            self.fetch()
 
     def unique_id(self):
         return self.__unique_id
@@ -407,8 +598,41 @@ class Celebrity(object):
 
     def day_of_birth(self):
         return self.__day_of_birth
+    def day_of_death(self):
+        return self.__day_of_death
     def place_of_birth(self):
         return self.__place_of_birth
+    def imdb_link(self):
+        return self.__imdb_link
+    def gender(self):
+        return self.__gender
+
+    def fetch(self):
+        # A special case: self.__celebrity_id can be set as a format
+        # like /search/name. We must fetch it to get result.
+        matched = Celebrity.__search_pattern.match(self.__celebrity_id)
+        if matched is not None:
+            # Oh yes, we got a search page instead of real user page.
+            logging.info("CelebritySearchPageVisitor: Second search: %s" \
+                    % self.__celebrity_id)
+            search_url = "http://movie.douban.com%s" % self.__celebrity_id
+            # Get HTML content, search for h3 tag, and get <a>
+            # under it as the real path.
+            c = CelebritySearchPageVisitor(parsehtml(search_url))
+            # Update the id to real page
+            result_url = c.search_result_url()
+            self.__celebrity_id = Celebrity.parse_celebrity_id(result_url)
+            self.__name = c.name()
+        full_url = Celebrity.reformat_celebrity_url(self.__celebrity_id)
+        c = CelebrityPageVisitor(parsehtml(full_url))
+        self.__gender = c.gender()
+        self.__day_of_birth = c.day_of_birth()
+        self.__day_of_death = c.day_of_death()
+        self.__place_of_birth = c.place_of_birth()
+        self.__imdb_link = c.imdb_link()
+        # NOTE: We don't update profession. In a lot of cases, one
+        # person may have multiple professions. So we leave it to
+        # movie_profession_map table.
 
     @staticmethod
     def parse_celebrity_id(douban_url):
@@ -442,8 +666,11 @@ class Sqlite3Host(object):
         'v1_celebrity_info': ('unique_id',
                               'douban_id',
                               'name',
+                              'gender',
                               'day_of_birth',
-                              'place_of_birth'),
+                              'day_of_death',
+                              'place_of_birth',
+                              'imdb_link'),
         'v1_movie_info': ('unique_id',
                           'douban_id',
                           'title',
@@ -459,8 +686,11 @@ class Sqlite3Host(object):
                                 unique_id text,
                                 douban_id text,
                                 name text,
+                                gender integer,
                                 day_of_birth text,
-                                place_of_birth text)""",
+                                place_of_birth text,
+                                day_of_death text,
+                                imdb_link text)""",
         'v1_movie_info': """create table v1_movie_info (
                             unique_id text,
                             douban_id text,
@@ -559,14 +789,17 @@ class Sqlite3Host(object):
             logging.info("Sqlite3Host: Save Celebrity object: %s %s, %s" % \
                     (obj.name(), obj.douban_id(), obj.profession()))
             celebrity_insertion = """
-                insert into v1_celebrity_info values (?, ?, ?, ?, ?)
+                insert into v1_celebrity_info values (?, ?, ?, ?, ?, ?, ?, ?)
             """
             self.__conn.execute(celebrity_insertion, \
                     (self.__v(obj.unique_id()), \
                      self.__v(obj.douban_id()), \
                      self.__v(obj.name()), \
+                     self.__v(obj.gender()), \
                      self.__v(obj.day_of_birth()), \
-                     self.__v(obj.place_of_birth())))
+                     self.__v(obj.day_of_death()), \
+                     self.__v(obj.place_of_birth()), \
+                     self.__v(obj.imdb_link())))
         else:
             raise UnsupportedDataException(type(obj).__name__)
         if commit:
@@ -738,7 +971,6 @@ class Spider(object):
                     # make sure a fetch can't be interrupted.
                     new_movie_id = self.__index["movies"].pop()
                     new_movie = Movie(new_movie_id, fetch_on_init = True)
-                    self.__db_host.save(new_movie)
                     self.__index["parsed_movies"].add(new_movie.douban_id())
                     for each_related_movie in new_movie.related_movies():
                         each_movie_id = each_related_movie.douban_id()
@@ -748,10 +980,15 @@ class Spider(object):
                     # Besides saving movie information, we also need to save
                     # celebrities indepdently
                     for each_celebrity in new_movie.celebrities():
+                        each_celebrity.fetch()
                         each_id = each_celebrity.douban_id()
                         if each_id not in self.__index["parsed_celebrities"]:
                             self.__db_host.save(each_celebrity)
                             self.__index["parsed_celebrities"].add(each_id)
+                    # Movie must be save AFTER celebrities because the
+                    # path of celebrities can be updated on fetch().
+                    self.__db_host.save(new_movie)
+
 
             # We have fetched all movies and celebrities. Stop.
             pending_movies = len(self.__index["movies"])
