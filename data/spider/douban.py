@@ -1,52 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
-# Components:
-# * MovieInfo
-#   Input: A URL to one douban movie page.
-#   Output:
-#       A list of actors/directors/scriptwriters, both name and URL
-#       A list of related movies.
-# * CelebriryInfo
-#   Input: A URL to one celebrity page.
-#   Output:
-#       Atrributes: gender, DOB, POB, Professional, family, IMDB-ID, URL
-#       A list of related movies.
-#       Collaboration: list of other celebrities.
-#
-# * MovieInfoDatabaseWriter
-#   Input: A movie object or celebrity object.
-#   Output: Write the data into database.
-#   Internally host several indexes:
-#   1. crawled_urls
-#   2. urls_to_crawl
-#
-# Database schema
-# * douban_celebrity_v1
-#   id, unique_id, gender, day_of_born, place_of_born
-#
-# * douban_celebrity_profession_v1
-#   id, celebrity_unique_id, professional
-#
-# * douban_movie_v1
-#   id, unique_id, title
-#
-# * douban_movie_director_map_v1
-#   id, movie_unique_id, director_unique_id
-#
-# * douban_movie_scriptwriter_map_v1
-#   id, movie_unique_id, script_writer_unique_id
-#
-# * douban_movie_actor_map_v1
-#   id, movie_unique_id, actors_unique_id
-#
-# * douban_page_hash_map_v1 (for checking if a page needs to be updated)
-#   id, page_url, hash
-
 import sys
 import re
 import urllib2
-import xml
+import logging
+import sqlite3
 
 # Python 2/3 compatibility hack: Import correct libraries
 ver = sys.version[0]
@@ -396,6 +354,46 @@ class Celebrity(object):
 
 
 class Sqlite3Host(object):
+    __table_params = {
+        'v1_celebrity_info': ('id',
+                              'douban_id',
+                              'name',
+                              'day_of_birth',
+                              'place_of_birth'),
+        'v1_movie_info': ('id',
+                          'douban_id',
+                          'name',
+                          'year'),
+        'v1_movie_profession_map': ('movie_douban_id',
+                                    'celebrity_douban_id',
+                                    'profession'),
+        'v1_pending_movie_urls': ('movie_url'),
+        'v1_pending_celebrity_urls': ('celebrity_url')
+    }
+    __table_creation_statements = {
+        'v1_celebrity_info': """create table v1_celebrity_info (
+                                id text,
+                                douban_id text,
+                                name text,
+                                day_of_birth text,
+                                place_of_birth text)""",
+        'v1_movie_info': """create table v1_movie_info (
+                            id text,
+                            douban_id text,
+                            name text,
+                            year text)""",
+        'v1_movie_profession_map': \
+                """create table v1_movie_profession_map (
+                   movie_douban_id text,
+                   celebrity_douban_id text,
+                   profession text)""",
+        'v1_pending_movie_urls': \
+                """create table v1_pending_movie_urls (
+                   movie_url text)""",
+        'v1_pending_celebrity_urls': \
+                """create table v1_pending_celebrity_urls (
+                   celebrity_url text)"""
+        }
     def __init__(self, sqlite_db_path):
         """
         Sqlite3Host.__init__(self, sqlite_db_path)
@@ -403,7 +401,8 @@ class Sqlite3Host(object):
         Write data to a SQLite3 database.
         """
         self.__sqlite_db_path = sqlite_db_path
-        self.__init_database()
+        self.__conn = sqlite3.connect(sqlite_db_path)
+        self.__create_database()
         pass
     def save(self, obj):
         """
@@ -412,8 +411,21 @@ class Sqlite3Host(object):
         Save object in database. Supports only :Movie: and :Celebrity:.
         """
         pass
-    def __init_database(self):
-        pass
+
+    def __create_table(self):
+        tables = Sqlite3Host.__table_params.keys()
+        query = '''select :table_name from sqlite_master where
+                   type='table' and name=:table_name'''
+        for each_table in tables:
+            cur = self.__conn.execute(query, {'table_name': each_table})
+            if cur.fetchone() is None: # A table does not exist
+                logging.info("Create table %s." % each_table)
+                create = Sqlite3Host.__table_creation_statements[each_table]
+                self.__conn.execute(create)
+            else:
+                logging.info("Table %s exists. Use it." % each_table)
+        self.__conn.commit()
+        # Now all tables are created
 
 def crawl(self, seed_url, database_host):
     pass
@@ -438,3 +450,5 @@ if __name__ == '__main__':
     print(m.year())
     print(m.title())
     print(m.url())
+    # Unit test 2: Create table
+    h = Sqlite3Host('test.db')
