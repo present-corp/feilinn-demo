@@ -170,7 +170,12 @@ class MoviePageVisitor(HP.HTMLParser):
                     # Get URL of celebrities, the name of each celebrity
                     # can only be retrieved from handle_data
                     self.__new_celebrity = {}
-                    self.__new_celebrity["url"] = attrs_dict["href"]
+                    # Make sure the URL matches the content 
+                    m = Celebrity.celebrity_pattern.match(attrs_dict["href"])
+                    if m is not None:
+                        self.__new_celebrity["id"] = m.group(1)
+                    else:
+                        self.__new_celebrity["id"] = attrs_dict["href"]
                     self.__new_celebrity["profession"] = role 
                     self.__state.append(MoviePageVisitor.get_new_celebrity)
             elif last_state == MoviePageVisitor.related_movie_start:
@@ -266,8 +271,8 @@ class Movie(HP.HTMLParser):
     def url(self):
         # We don't keep URL all the time, as it's not really useful for
         # spider. Keeping a movie_id is good enough.
-        return "http://movie.douban.com/subject/%s/" % self.__movie_id
-        pass
+        return Movie.reformat_movie_url(self.__movie_id)
+
     def unique_id(self):
         return self.__unique_id
     def title(self):
@@ -281,10 +286,17 @@ class Movie(HP.HTMLParser):
     def directors(self):
         return self.__directors
     def related_movie_ids(self):
+        """
+        Movie.related_movie_urls() -> List of movie IDs
+
+        Return a list of related movie IDs, found from HTML page. The
+        IDs can be used to regenerate full movie page URL with
+        Movie.reformat_movie_url().
+        """
         return self.__related_movie_ids
 
     def __parse_page(self, douban_url, html_content):
-        self.__movie_id = self.__get_id(douban_url)
+        self.__movie_id = Movie.parse_movie_id(douban_url)
         content = html_content
         if html_content is None:
             content = parsehtml(self.url())
@@ -296,11 +308,20 @@ class Movie(HP.HTMLParser):
         self.__scriptwriters = m.scriptwriters()
         self.__actors = m.actors()
         self.__related_movie_ids = \
-                [self.__get_id(each) for each in m.related_movie_urls()]
+                [Movie.parse_movie_id(each) for each in m.related_movie_urls()]
         self.__title = m.title()
         self.__year = m.year()
+        self.__unique_id = "%s_%s" % (self.__title, self.__year)
 
-    def __get_id(self, douban_url):
+    @staticmethod
+    def parse_movie_id(douban_url):
+        """
+        Movie.parse_movie_id(self, douban_url) -> Id only.
+
+        Static method. Parse movie Id from given Douban movie URL. If
+        the input URL does not look like a valid Douban movie URL, raise
+        :UrlParseException: exception.
+        """
         matched = Movie.__movie_url_pattern.match(douban_url)
         if matched is None:
             raise UrlParseException(douban_url)
@@ -312,8 +333,18 @@ class Movie(HP.HTMLParser):
             raise UrlParseException(douban_url)
         return movie_id
 
+    @staticmethod
+    def reformat_movie_url(movie_id):
+        return "http://movie.douban.com/subject/%s/" % movie_id
+
 
 class Celebrity(object):
+    celebrity_pattern = re.compile("\/celebrity\/([0-9][0-9]*)\/")
+    __celebrity_url_pattern = \
+            re.compile(r"http:\/\/movie\.douban\.com\/celebrity\/([0-9][0-9]*)\/")
+    __param_removal_pattern = \
+            re.compile(r"http:\/\/movie\.douban\.com\/celebrity\/([0-9][0-9]*)\/(\?.*)$")
+
     def __init__(self, douban_url):
         """
         Celebrity.__init__(self, douban_url)
@@ -338,6 +369,31 @@ class Celebrity(object):
 
     def __parse_page(self):
         pass
+
+    @staticmethod
+    def parse_celebrity_id(douban_url):
+        """
+        Celebrity.parse_celebrity_id(self, douban_url) -> Id only.
+
+        Static method. Parse celebrity Id from given Douban movie URL. If
+        the input URL does not look like a valid Douban movie URL, raise
+        :UrlParseException: exception.
+        """
+        matched = Celebrity.__celebrity_url_pattern.match(douban_url)
+        if matched is None:
+            raise UrlParseException(douban_url)
+        # This looks like a good page. Remove query parameters.
+        matched = Celebrity.__param_removal_pattern.match(douban_url)
+        if matched is not None:
+            celebrity_id = matched.group(1)
+        else:
+            raise UrlParseException(douban_url)
+        return celebrity_id
+
+    @staticmethod
+    def reformat_celebrity_url(celebrity_id):
+        return "http://movie.douban.com/celebrity/%s/" % celebrity_id
+
 
 class Sqlite3Host(object):
     def __init__(self, sqlite_db_path):
@@ -367,11 +423,10 @@ if __name__ == '__main__':
     def print_names(info):
         for each_info in info:
             print(each_info["name"].encode('utf-8'))
-            print(each_info["url"].encode('utf-8'))
-    url = "http://movie.douban.com/subject/3078390/?from=showing"
+            print(each_info["id"].encode('utf-8'))
+    url = "http://movie.douban.com/subject/1291843/?from=showing"
     content = parsehtml(url)
     m = Movie(url, content)
-    #print(m.url())
     print_names(m.actors())
     print("============")
     print_names(m.scriptwriters())
@@ -382,3 +437,4 @@ if __name__ == '__main__':
     print("============")
     print(m.year())
     print(m.title())
+    print(m.url())
