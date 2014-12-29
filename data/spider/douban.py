@@ -80,6 +80,7 @@ def parsehtml(url):
     return content
 
 class MoviePageVisitor(HP.HTMLParser):
+    # State automaton
     idle = 0
     movie_info_start = 1
     profession_start = 2
@@ -91,12 +92,14 @@ class MoviePageVisitor(HP.HTMLParser):
     get_new_celebrity = 8
     placeholder = 9
     can_ignore = 10
+    related_movie_start = 11
 
     def __init__(self, html_content):
         HP.HTMLParser.__init__(self)
         self.__state = [MoviePageVisitor.idle]
         self.__tag_stack = []
         self.__new_celebrity = None
+        self.__related_movie_urls = []
         self.__celebrities = {
                 MoviePageVisitor.director_start: [],
                 MoviePageVisitor.scriptwriter_start: [],
@@ -111,6 +114,8 @@ class MoviePageVisitor(HP.HTMLParser):
         return self.__celebrities[MoviePageVisitor.scriptwriter_start]
     def actors(self):
         return self.__celebrities[MoviePageVisitor.actor_start]
+    def related_movie_urls(self):
+        return self.__related_movie_urls
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
@@ -120,6 +125,11 @@ class MoviePageVisitor(HP.HTMLParser):
         if ltag == 'div':
             if "id" in attrs_dict and attrs_dict["id"] == 'info':
                 self.__state.append(MoviePageVisitor.movie_info_start)
+            elif "class" in attrs_dict and \
+                    attrs_dict["class"] == 'recommendations-bd':
+                self.__state.append(MoviePageVisitor.related_movie_start)
+            else:
+                pass
         elif ltag == 'span':
             if "class" in attrs_dict and attrs_dict["class"] == 'pl':
                 # Update state of parent level: It should be the start
@@ -150,6 +160,8 @@ class MoviePageVisitor(HP.HTMLParser):
                     self.__new_celebrity["url"] = attrs_dict["href"]
                     self.__new_celebrity["profession"] = role 
                     self.__state.append(MoviePageVisitor.get_new_celebrity)
+            elif last_state == MoviePageVisitor.related_movie_start:
+                self.__related_movie_urls.append(attrs_dict["href"])
             else:
                 pass
         else:
@@ -181,7 +193,8 @@ class MoviePageVisitor(HP.HTMLParser):
         elif ltag == 'div':
             if last_state == MoviePageVisitor.movie_info_start:
                 self.__state.pop()
-                print("movie_info_complete")
+            elif last_state == MoviePageVisitor.related_movie_start:
+                self.__state.pop()
             else:
                 pass
 
@@ -222,7 +235,7 @@ class Movie(HP.HTMLParser):
         self.__movie_id = None
         self.__unique_id = None
         self.__title = None
-        self.__related_movie_info = []
+        self.__related_movie_ids = []
         self.__directors = []
         self.__actors = []
         self.__scriptwriters = []
@@ -243,25 +256,36 @@ class Movie(HP.HTMLParser):
         return self.__scriptwriters
     def directors(self):
         return self.__directors
+    def related_movie_ids(self):
+        return self.__related_movie_ids
 
     def __parse_page(self, douban_url, html_content):
+        self.__movie_id = self.__get_id(douban_url)
+        content = html_content
+        if html_content is None:
+            content = parsehtml(self.url())
+        else:
+            content = html_content
+        m = MoviePageVisitor(content)
+
+        self.__directors = m.directors()
+        self.__scriptwriters = m.scriptwriters()
+        self.__actors = m.actors()
+        self.__related_movie_ids = \
+                [self.__get_id(each) for each in m.related_movie_urls()]
+
+    def __get_id(self, douban_url):
         matched = Movie.__movie_url_pattern.match(douban_url)
         if matched is None:
             raise UrlParseException(douban_url)
         # This looks like a good page. Remove query parameters.
         matched = Movie.__param_removal_pattern.match(douban_url)
         if matched is not None:
-            self.__movie_id = matched.group(1)
-        if html_content is not None:
-            # Get page content.
-            m = MoviePageVisitor(html_content)
+            movie_id = matched.group(1)
         else:
-            # Get page content.
-            m = MoviePageVisitor(parsehtml(self.url()))
-        self.__directors = m.directors()
-        self.__scriptwriters = m.scriptwriters()
-        self.__actors = m.actors()
-        m.reset()
+            raise UrlParseException(douban_url)
+        return movie_id
+
 
 class Celebrity(object):
     def __init__(self, douban_url):
@@ -327,3 +351,5 @@ if __name__ == '__main__':
     print_names(m.scriptwriters())
     print("============")
     print_names(m.directors())
+    print("============")
+    print(m.related_movie_ids())
