@@ -232,14 +232,12 @@ class MoviePageVisitor(HP.HTMLParser):
     STATE_SCRIPTWRITER_START = 4
     STATE_ACTOR_START = 5
     STATE_PROFESSION_GET_ROLE = 6
-    STATE_PROFESSION_GET_CELEBRITIES = 7
     GET_NEW_CELEBRITY = 8
     STATE_PLACEHOLDER = 9
-    STATE_CAN_IGNORE = 10
-    STATE_RELATED_MOVIE_START = 11
-    STATE_MOVIE_TITLE_START = 12
-    STATE_MOVIE_YEAR_START = 13
-    STATE_REGION_START = 14
+    STATE_RELATED_MOVIE_START = 10
+    STATE_MOVIE_TITLE_START = 11
+    STATE_MOVIE_YEAR_START = 12
+    STATE_REGION_START = 13
 
     def __init__(self, html_content):
         HP.HTMLParser.__init__(self)
@@ -290,17 +288,8 @@ class MoviePageVisitor(HP.HTMLParser):
             if "class" in attrs_dict and attrs_dict["class"] == 'pl':
                 # Update state of parent level: It should be the start
                 # of events
-                if last_state == MoviePageVisitor.STATE_PLACEHOLDER:
-                    assert self.__state[-2] == MoviePageVisitor.STATE_MOVIE_INFO_START
-                    self.__state[-1] = MoviePageVisitor.STATE_PROFESSION_START
-                    self.__state.append(MoviePageVisitor.STATE_PROFESSION_GET_ROLE)
-                else:
-                    pass
-            elif "class" in attrs_dict and attrs_dict["class"] == 'attrs':
-                self.__state.append(MoviePageVisitor.STATE_PROFESSION_GET_CELEBRITIES)
-            elif last_state == MoviePageVisitor.STATE_MOVIE_INFO_START:
-                # Placeholder. Will be replaced at <span class="pl".
-                self.__state.append(MoviePageVisitor.STATE_PLACEHOLDER)
+                if last_state == MoviePageVisitor.STATE_MOVIE_INFO_START:
+                    self.__state.append(MoviePageVisitor.STATE_PROFESSION_START)
             elif "property" in attrs_dict and \
                     attrs_dict["property"] == "v:itemreviewed":
                 self.__state.append(MoviePageVisitor.STATE_MOVIE_TITLE_START)
@@ -314,11 +303,9 @@ class MoviePageVisitor(HP.HTMLParser):
             else:
                 pass
         elif ltag == 'a':
-            if last_state == MoviePageVisitor.STATE_PROFESSION_GET_CELEBRITIES:
-                role = self.__state[-2]
-                assert role == MoviePageVisitor.STATE_DIRECTOR_START or \
-                        role == MoviePageVisitor.STATE_SCRIPTWRITER_START or \
-                        role == MoviePageVisitor.STATE_ACTOR_START
+            if last_state == MoviePageVisitor.STATE_DIRECTOR_START or \
+               last_state == MoviePageVisitor.STATE_SCRIPTWRITER_START or \
+               last_state == MoviePageVisitor.STATE_ACTOR_START:
                 if "href" in attrs_dict:
                     # Get URL of celebrities, the name of each celebrity
                     # can only be retrieved from handle_data
@@ -329,7 +316,7 @@ class MoviePageVisitor(HP.HTMLParser):
                         self.__new_celebrity["douban_id"] = m.group(1)
                     else:
                         self.__new_celebrity["douban_id"] = attrs_dict["href"]
-                    self.__new_celebrity["profession"] = role 
+                    self.__new_celebrity["profession"] = last_state
                     self.__state.append(MoviePageVisitor.GET_NEW_CELEBRITY)
             elif last_state == MoviePageVisitor.STATE_RELATED_MOVIE_START:
                 self.__related_movie_urls.append(attrs_dict["href"])
@@ -352,27 +339,15 @@ class MoviePageVisitor(HP.HTMLParser):
             if last_state == MoviePageVisitor.STATE_DIRECTOR_START or \
                last_state == MoviePageVisitor.STATE_SCRIPTWRITER_START or \
                last_state == MoviePageVisitor.STATE_ACTOR_START or \
-               last_state == MoviePageVisitor.STATE_PROFESSION_GET_CELEBRITIES or \
                last_state == MoviePageVisitor.STATE_PROFESSION_GET_ROLE or \
                last_state == MoviePageVisitor.STATE_MOVIE_TITLE_START or \
-               last_state == MoviePageVisitor.STATE_MOVIE_YEAR_START:
+               last_state == MoviePageVisitor.STATE_MOVIE_YEAR_START or \
+               last_state == MoviePageVisitor.STATE_PLACEHOLDER:
                 self.__state.pop()
-            elif last_state == MoviePageVisitor.STATE_CAN_IGNORE:
-                pass
             elif last_state == MoviePageVisitor.STATE_PROFESSION_START:
-                # It may happen for movies just don't have any
-                # information of actor/scriptwriter/director. One
-                # example is here: http://movie.douban.com/subject/5343588/
-                #
-                # In this case, there's no chance for to replace
-                # STATE_PROFESSION_START to another value, so no choice
-                # but pop.
-                logging.warn("MoviePageVisitor: Movie without celebrity!  %s" \
-                                % self.__title)
-                self.__state.pop()
-                pass
-            else:
-                pass
+                # Can't happen here now. All PROFESSION_START are either
+                # replaced to real fetch start flag, or placeholder.
+                assert False
         elif ltag == 'div':
             if last_state == MoviePageVisitor.STATE_MOVIE_INFO_START:
                 self.__state.pop()
@@ -384,25 +359,25 @@ class MoviePageVisitor(HP.HTMLParser):
     def handle_data(self, data):
         data = data.lstrip().rstrip()
         last_state = self.__state[-1]
-        if last_state == MoviePageVisitor.STATE_PROFESSION_GET_ROLE:
-            assert self.__state[-2] == MoviePageVisitor.STATE_PROFESSION_START
+        if last_state == MoviePageVisitor.STATE_PROFESSION_START:
             if data == u'导演':
-                self.__state[-2] = MoviePageVisitor.STATE_DIRECTOR_START
+                self.__state[-1] = MoviePageVisitor.STATE_DIRECTOR_START
+                self.__state.append(MoviePageVisitor.STATE_PLACEHOLDER)
             elif data == u'编剧':
-                self.__state[-2] = MoviePageVisitor.STATE_SCRIPTWRITER_START
+                self.__state[-1] = MoviePageVisitor.STATE_SCRIPTWRITER_START
+                self.__state.append(MoviePageVisitor.STATE_PLACEHOLDER)
             elif data == u'主演':
-                self.__state[-2] = MoviePageVisitor.STATE_ACTOR_START
+                self.__state[-1] = MoviePageVisitor.STATE_ACTOR_START
+                self.__state.append(MoviePageVisitor.STATE_PLACEHOLDER)
             elif data == u'制片国家/地区:':
                 # Trick: The region info is different with other fields
                 # because it's totally out of scope of span, so we have
                 # to insert STATE_REGION_START before GET_ROLE, so next
                 # space and receive it.
                 self.__state[-1] = MoviePageVisitor.STATE_REGION_START
-                self.__state.append(MoviePageVisitor.STATE_PROFESSION_GET_ROLE)
+                self.__state.append(MoviePageVisitor.STATE_PLACEHOLDER)
             else:
-                # Others like region, just keep STATE_PLACEHOLDER
-                self.__state[-2] = MoviePageVisitor.STATE_CAN_IGNORE
-                pass
+                self.__state[-1] = MoviePageVisitor.STATE_PLACEHOLDER
         elif last_state == MoviePageVisitor.STATE_REGION_START:
             self.__region = data
             # This state is special because it's marked for a data
@@ -421,8 +396,6 @@ class MoviePageVisitor(HP.HTMLParser):
                 self.__year = data[1:-1]
                 logging.info("MoviePageVisitor: First year found from h1: %s" \
                                 % self.__year)
-        else:
-            pass
 
 class Movie(object):
     __movie_url_pattern = \
@@ -612,6 +585,7 @@ class Celebrity(object):
         # like /search/name. We must fetch it to get result.
         matched = Celebrity.__search_pattern.match(self.__celebrity_id)
         if matched is not None:
+            search_id = self.__celebrity_id 
             # Oh yes, we got a search page instead of real user page.
             logging.info("CelebritySearchPageVisitor: Second search: %s" \
                     % self.__celebrity_id)
@@ -623,6 +597,8 @@ class Celebrity(object):
             result_url = c.search_result_url()
             self.__celebrity_id = Celebrity.parse_celebrity_id(result_url)
             self.__name = c.name()
+            logging.info("CelebritySearchPageVisitor: Redirect %s => %s" \
+                    % (search_id, self.__celebrity_id))
         full_url = Celebrity.reformat_celebrity_url(self.__celebrity_id)
         c = CelebrityPageVisitor(parsehtml(full_url))
         self.__gender = c.gender()
@@ -744,7 +720,7 @@ class Sqlite3Host(object):
         if self.__conn is None:
             raise DatabaseNotStartedException()
         if type(obj) is Movie:
-            logging.info("Sqlite3Host: Save Movie object: %s %s" % \
+            logging.info("Sqlite3Host: Save Movie: %s %s" % \
                     (obj.title(), obj.douban_id()))
             movie_insertion = """
                 insert into v1_movie_info values (?, ?, ?, ?, ?)
@@ -786,7 +762,7 @@ class Sqlite3Host(object):
                              self.__v(celebrity_profession)))
 
         elif type(obj) is Celebrity:
-            logging.info("Sqlite3Host: Save Celebrity object: %s %s, %s" % \
+            logging.info("Sqlite3Host: Save Celebrity: %s %s, %s" % \
                     (obj.name(), obj.douban_id(), obj.profession()))
             celebrity_insertion = """
                 insert into v1_celebrity_info values (?, ?, ?, ?, ?, ?, ?, ?)
