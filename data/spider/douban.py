@@ -67,7 +67,7 @@ class UrlParseException(Exception):
     def url(self):
         return self.__url
 
-def parsehtml(url, html_parser):
+def parsehtml(url):
     """
     parsehtml(url)
 
@@ -77,8 +77,7 @@ def parsehtml(url, html_parser):
     encoding = response.headers.getparam('charset')
     content = response.read().decode(encoding)
     response.close()
-    html_parser.feed(content)
-    html_parser.reset()
+    return content
 
 class MoviePageVisitor(HP.HTMLParser):
     idle = 0
@@ -87,17 +86,24 @@ class MoviePageVisitor(HP.HTMLParser):
     director_start = 3
     scriptwriter_start = 4
     actor_start = 5
-    get_new_celebrity = 6
+    profession_get_role = 6
+    profession_get_celebrities = 7
+    get_new_celebrity = 8
+    placeholder = 9
+    can_ignore = 10
 
-    def __init__(self):
+    def __init__(self, html_content):
         HP.HTMLParser.__init__(self)
         self.__state = [MoviePageVisitor.idle]
+        self.__tag_stack = []
         self.__new_celebrity = None
         self.__celebrities = {
                 MoviePageVisitor.director_start: [],
                 MoviePageVisitor.scriptwriter_start: [],
                 MoviePageVisitor.actor_start: []
         }
+        self.feed(content)
+        self.reset()
 
     def directors(self):
         return self.__celebrities[MoviePageVisitor.director_start]
@@ -110,33 +116,39 @@ class MoviePageVisitor(HP.HTMLParser):
         attrs_dict = dict(attrs)
         ltag = tag.lower()
         last_state = self.__state[-1]
+
         if ltag == 'div':
             if "id" in attrs_dict and attrs_dict["id"] == 'info':
-                # Start from movie info.
                 self.__state.append(MoviePageVisitor.movie_info_start)
-            else:
-                pass
         elif ltag == 'span':
-            if "class" in attrs_dict and attrs_dict["class"] == "pl":
-                # A profession index start
-                if last_state == MoviePageVisitor.movie_info_start or \
-                   last_state == MoviePageVisitor.profession_start or \
-                   last_state == MoviePageVisitor.director_start or \
-                   last_state == MoviePageVisitor.scriptwriter_start or \
-                   last_state == MoviePageVisitor.actor_start:
-                    self.__state.append(MoviePageVisitor.profession_start)
+            if "class" in attrs_dict and attrs_dict["class"] == 'pl':
+                # Update state of parent level: It should be the start
+                # of events
+                if last_state == MoviePageVisitor.placeholder:
+                    assert self.__state[-2] == MoviePageVisitor.movie_info_start
+                    self.__state[-1] = MoviePageVisitor.profession_start
+                    self.__state.append(MoviePageVisitor.profession_get_role)
                 else:
                     pass
+            elif "class" in attrs_dict and attrs_dict["class"] == 'attrs':
+                self.__state.append(MoviePageVisitor.profession_get_celebrities)
+            elif last_state == MoviePageVisitor.movie_info_start:
+                # Placeholder. Will be replaced at <span class="pl".
+                self.__state.append(MoviePageVisitor.placeholder)
+            else:
+                pass
         elif ltag == 'a':
-            if last_state == MoviePageVisitor.director_start or \
-               last_state == MoviePageVisitor.scriptwriter_start or \
-               last_state == MoviePageVisitor.actor_start:
+            if last_state == MoviePageVisitor.profession_get_celebrities:
+                role = self.__state[-2]
+                assert role == MoviePageVisitor.director_start or \
+                        role == MoviePageVisitor.scriptwriter_start or \
+                        role == MoviePageVisitor.actor_start
                 if "href" in attrs_dict:
                     # Get URL of celebrities, the name of each celebrity
                     # can only be retrieved from handle_data
                     self.__new_celebrity = {}
                     self.__new_celebrity["url"] = attrs_dict["href"]
-                    self.__new_celebrity["profession"] = last_state 
+                    self.__new_celebrity["profession"] = role 
                     self.__state.append(MoviePageVisitor.get_new_celebrity)
             else:
                 pass
@@ -144,18 +156,48 @@ class MoviePageVisitor(HP.HTMLParser):
             pass
 
     def handle_endtag(self, tag):
-        pass
+        ltag = tag.lower()
+        last_state = self.__state[-1]
+        if ltag == 'a':
+            if last_state == MoviePageVisitor.get_new_celebrity:
+                self.__state.pop()
+            else:
+                pass
+        elif ltag == 'span':
+            if last_state == MoviePageVisitor.director_start or \
+               last_state == MoviePageVisitor.scriptwriter_start or \
+               last_state == MoviePageVisitor.actor_start or \
+               last_state == MoviePageVisitor.profession_get_celebrities or \
+               last_state == MoviePageVisitor.profession_get_role:
+                self.__state.pop()
+            elif last_state == MoviePageVisitor.can_ignore:
+                pass
+            elif last_state == MoviePageVisitor.profession_start:
+                # It may happen for tags like region/languages
+                assert False
+                pass
+            else:
+                pass
+        elif ltag == 'div':
+            if last_state == MoviePageVisitor.movie_info_start:
+                self.__state.pop()
+                print("movie_info_complete")
+            else:
+                pass
 
     def handle_data(self, data):
         last_state = self.__state[-1]
-        if last_state == MoviePageVisitor.profession_start:
+        if last_state == MoviePageVisitor.profession_get_role:
+            assert self.__state[-2] == MoviePageVisitor.profession_start
             if data == u'导演':
-                self.__state.append(MoviePageVisitor.director_start)
+                self.__state[-2] = MoviePageVisitor.director_start
             elif data == u'编剧':
-                self.__state.append(MoviePageVisitor.scriptwriter_start)
+                self.__state[-2] = MoviePageVisitor.scriptwriter_start
             elif data == u'主演':
-                self.__state.append(MoviePageVisitor.actor_start)
+                self.__state[-2] = MoviePageVisitor.actor_start
             else:
+                # Others like region, just keep placeholder
+                self.__state[-2] = MoviePageVisitor.can_ignore
                 pass
         elif last_state == MoviePageVisitor.get_new_celebrity:
             self.__new_celebrity["name"] = data.lstrip().rstrip()
@@ -173,9 +215,9 @@ class Movie(HP.HTMLParser):
             re.compile(r"http:\/\/movie\.douban\.com\/subject\/([0-9][0-9]*)\/")
     __param_removal_pattern = \
             re.compile(r"http:\/\/movie\.douban\.com\/subject\/([0-9][0-9]*)\/(\?.*)$")
-    def __init__(self, douban_url):
+    def __init__(self, douban_url, html_content = None):
         """
-        Movie.__init__(self, douban_url)
+        Movie.__init__(self, douban_url, html_content)
         """
         self.__movie_id = None
         self.__unique_id = None
@@ -184,7 +226,7 @@ class Movie(HP.HTMLParser):
         self.__directors = []
         self.__actors = []
         self.__scriptwriters = []
-        self.__parse_page(douban_url) # Note: May throw exception
+        self.__parse_page(douban_url, html_content)
 
     def url(self):
         # We don't keep URL all the time, as it's not really useful for
@@ -202,7 +244,7 @@ class Movie(HP.HTMLParser):
     def directors(self):
         return self.__directors
 
-    def __parse_page(self, douban_url):
+    def __parse_page(self, douban_url, html_content):
         matched = Movie.__movie_url_pattern.match(douban_url)
         if matched is None:
             raise UrlParseException(douban_url)
@@ -210,9 +252,12 @@ class Movie(HP.HTMLParser):
         matched = Movie.__param_removal_pattern.match(douban_url)
         if matched is not None:
             self.__movie_id = matched.group(1)
-        # Get page content.
-        m = MoviePageVisitor()
-        parsehtml(self.url(), m)
+        if html_content is not None:
+            # Get page content.
+            m = MoviePageVisitor(html_content)
+        else:
+            # Get page content.
+            m = MoviePageVisitor(parsehtml(self.url()))
         self.__directors = m.directors()
         self.__scriptwriters = m.scriptwriters()
         self.__actors = m.actors()
@@ -273,7 +318,9 @@ if __name__ == '__main__':
         for each_info in info:
             print(each_info["name"].encode('utf-8'))
             print(each_info["url"].encode('utf-8'))
-    m = Movie("http://movie.douban.com/subject/3078390/?from=showing")
+    url = "http://movie.douban.com/subject/3078390/?from=showing"
+    content = parsehtml(url)
+    m = Movie(url, content)
     #print(m.url())
     print_names(m.actors())
     print("============")
