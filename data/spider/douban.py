@@ -431,9 +431,10 @@ class Sqlite3Host(object):
                           'year'),
         'v1_movie_profession_map': ('movie_douban_id',
                                     'celebrity_douban_id',
-                                    'profession')
+                                    'profession'),
+        'v1_partial_movie_info': ('douban_id')
     }
-    __table_creation_statements = {
+    __table_creations = {
         'v1_celebrity_info': """create table v1_celebrity_info (
                                 unique_id text,
                                 douban_id text,
@@ -451,7 +452,10 @@ class Sqlite3Host(object):
                 """create table v1_movie_profession_map (
                    movie_douban_id text,
                    celebrity_douban_id text,
-                   profession integer)"""
+                   profession integer)""",
+        'v1_partial_movie_info': """create table v1_partial_movie_info (
+                            douban_id text)"""
+
         }
     def __init__(self, sqlite_db_path):
         """
@@ -499,19 +503,39 @@ class Sqlite3Host(object):
             movie_profession_map = """
                  insert into v1_movie_profession_map values (?, ?, ?)
             """
-            self.__conn.execute(movie_insertion, \
-                    (self.__v(obj.unique_id()), \
-                     self.__v(obj.douban_id()), \
-                     self.__v(obj.title()), \
-                     self.__v(obj.year()), \
-                     self.__is_movie_partial(obj)))
-            for each_celebrity in obj.celebrities():
-                celebrity_douban_id = each_celebrity.douban_id()
-                celebrity_profession = each_celebrity.profession()
-                self.__conn.execute(movie_profession_map, \
-                        (self.__v(obj.douban_id()), \
-                         self.__v(celebrity_douban_id), \
-                         self.__v(celebrity_profession)))
+            movie_partial_insertion = """
+                insert into v1_partial_movie_info values (?)
+            """
+            if self.__is_movie_partial(obj):
+                # We have to leave all partial movies to a seperated
+                # table, because Sqlite3 does not support dropping
+                # column from table. If we leave all partial data in
+                # same table, they can't be easily rewritten.
+                #
+                # A typical scenario is developer hit CTRL-C during
+                # fetching. Then a long list will be save for next fetch
+                # and they are all partial. We can't let them in
+                # existing table.
+                #
+                # For the same reason, we don't need celebrities from
+                # partial movie. They will be retrieved at next fetch.
+                self.__conn.execute(movie_partial_insertion, \
+                                    (self.__v(obj.douban_id()), ))
+            else:
+                self.__conn.execute(movie_insertion, \
+                        (self.__v(obj.unique_id()), \
+                         self.__v(obj.douban_id()), \
+                         self.__v(obj.title()), \
+                         self.__v(obj.year()), \
+                         self.__is_movie_partial(obj)))
+                for each_celebrity in obj.celebrities():
+                    celebrity_douban_id = each_celebrity.douban_id()
+                    celebrity_profession = each_celebrity.profession()
+                    self.__conn.execute(movie_profession_map, \
+                            (self.__v(obj.douban_id()), \
+                             self.__v(celebrity_douban_id), \
+                             self.__v(celebrity_profession)))
+
         elif type(obj) is Celebrity:
             logging.info("Sqlite3Host: Save Celebrity object: %s %s, %s" % \
                     (obj.name(), obj.douban_id(), obj.profession()))
@@ -573,7 +597,20 @@ class Sqlite3Host(object):
         if self.__conn is None:
             raise DatabaseNotStartedException()
         logging.info("Sqlite3Host: Load partial movie Ids")
-        return []
+        query = "select douban_id from v1_partial_movie_info"
+        cursor = self.__conn.execute(query)
+        columns = cursor.fetchall()
+        ids = [each[0] for each in columns]
+        logging.info("Sqlite3Host: Ids loaded: %d" % len(ids))
+        logging.info("Sqlite3Host: Drop partial movie table")
+        drop = "drop table v1_partial_movie_info"
+        self.__conn.execute(drop)
+        logging.info("Sqlite3Host: Recreate partial movie table")
+        create = Sqlite3Host.__table_creations["v1_partial_movie_info"]
+        self.__conn.execute(create)
+        self.__conn.commit()
+        logging.info("Sqlite3Host: Partial movie table created.")
+        return ids
 
     def __create_table(self):
         tables = Sqlite3Host.__table_params.keys()
@@ -583,7 +620,7 @@ class Sqlite3Host(object):
             cur = self.__conn.execute(query, {'table_name': each_table})
             if cur.fetchone() is None: # A table does not exist
                 logging.info("Create table %s." % each_table)
-                create = Sqlite3Host.__table_creation_statements[each_table]
+                create = Sqlite3Host.__table_creations[each_table]
                 self.__conn.execute(create)
             else:
                 logging.info("Table %s exists. Use it." % each_table)
@@ -601,8 +638,8 @@ class Spider(object):
         # written to database.
         self.__index = {
             'movies': [],
-            'parsed_movies': set([]),
-            "parsed_celebrities": set([])
+            'parsed_movies': set(),
+            "parsed_celebrities": set()
         }
         self.__db_host = db_host
         self.__stop_sign = threading.Condition()
@@ -706,7 +743,10 @@ class Spider(object):
             logging.info("Worker: %d celebrities parsed." % (parsed_celebrities))
             if pending_movies > 0:
                 logging.info("Worker: %d movies pending." % (pending_movies))
-                saved_movies = [Movie(each) for each in self.__index["movies"]]
+                # Remove duplcations, but order may change.
+                dedup_ids = list(set(self.__index["movies"]))
+                logging.info("Worker: Dedup: %d IDs left." % len(dedup_ids))
+                saved_movies = [Movie(each) for each in dedup_ids]
                 self.__db_host.save_list(saved_movies)
             self.__started = False
         except Exception as e:
@@ -747,7 +787,7 @@ if __name__ == '__main__':
                         help="Maximum movies to be parsed. 0 means unlimited.")
 
     args = parser.parse_args()
-    formatter = '%(asctime)s - %(name)s - %(levelname)s - %(message)s: '
+    formatter = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     logging.basicConfig(filename=args.log, \
                         format=formatter, \
                         level=logging.DEBUG)
