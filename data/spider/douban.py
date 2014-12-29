@@ -93,6 +93,8 @@ class MoviePageVisitor(HP.HTMLParser):
     placeholder = 9
     can_ignore = 10
     related_movie_start = 11
+    movie_title_start = 12
+    movie_year_start = 13
 
     def __init__(self, html_content):
         HP.HTMLParser.__init__(self)
@@ -100,6 +102,8 @@ class MoviePageVisitor(HP.HTMLParser):
         self.__tag_stack = []
         self.__new_celebrity = None
         self.__related_movie_urls = []
+        self.__title = None
+        self.__year = None
         self.__celebrities = {
                 MoviePageVisitor.director_start: [],
                 MoviePageVisitor.scriptwriter_start: [],
@@ -116,6 +120,10 @@ class MoviePageVisitor(HP.HTMLParser):
         return self.__celebrities[MoviePageVisitor.actor_start]
     def related_movie_urls(self):
         return self.__related_movie_urls
+    def title(self):
+        return self.__title
+    def year(self):
+        return self.__year
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
@@ -145,6 +153,11 @@ class MoviePageVisitor(HP.HTMLParser):
             elif last_state == MoviePageVisitor.movie_info_start:
                 # Placeholder. Will be replaced at <span class="pl".
                 self.__state.append(MoviePageVisitor.placeholder)
+            elif "property" in attrs_dict and \
+                    attrs_dict["property"] == "v:itemreviewed":
+                self.__state.append(MoviePageVisitor.movie_title_start)
+            elif "class" in attrs_dict and attrs_dict["class"] == "year":
+                self.__state.append(MoviePageVisitor.movie_year_start)
             else:
                 pass
         elif ltag == 'a':
@@ -171,7 +184,9 @@ class MoviePageVisitor(HP.HTMLParser):
         ltag = tag.lower()
         last_state = self.__state[-1]
         if ltag == 'a':
-            if last_state == MoviePageVisitor.get_new_celebrity:
+            if last_state == MoviePageVisitor.get_new_celebrity or \
+               last_state == MoviePageVisitor.movie_title_start or \
+               last_state == MoviePageVisitor.movie_year_start:
                 self.__state.pop()
             else:
                 pass
@@ -180,7 +195,9 @@ class MoviePageVisitor(HP.HTMLParser):
                last_state == MoviePageVisitor.scriptwriter_start or \
                last_state == MoviePageVisitor.actor_start or \
                last_state == MoviePageVisitor.profession_get_celebrities or \
-               last_state == MoviePageVisitor.profession_get_role:
+               last_state == MoviePageVisitor.profession_get_role or \
+               last_state == MoviePageVisitor.movie_title_start or \
+               last_state == MoviePageVisitor.movie_year_start:
                 self.__state.pop()
             elif last_state == MoviePageVisitor.can_ignore:
                 pass
@@ -199,6 +216,7 @@ class MoviePageVisitor(HP.HTMLParser):
                 pass
 
     def handle_data(self, data):
+        date = data.lstrip().rstrip()
         last_state = self.__state[-1]
         if last_state == MoviePageVisitor.profession_get_role:
             assert self.__state[-2] == MoviePageVisitor.profession_start
@@ -218,7 +236,10 @@ class MoviePageVisitor(HP.HTMLParser):
             prof = self.__new_celebrity["profession"]
             self.__celebrities[prof].append(self.__new_celebrity)
             self.__new_celebrity = None
-            self.__state.pop() # get_new_celebrity done.
+        elif last_state == MoviePageVisitor.movie_title_start:
+            self.__title = data
+        elif last_state == MoviePageVisitor.movie_year_start:
+            self.__year = data[1:-1]
         else:
             pass
 
@@ -235,6 +256,7 @@ class Movie(HP.HTMLParser):
         self.__movie_id = None
         self.__unique_id = None
         self.__title = None
+        self.__year = None
         self.__related_movie_ids = []
         self.__directors = []
         self.__actors = []
@@ -250,6 +272,8 @@ class Movie(HP.HTMLParser):
         return self.__unique_id
     def title(self):
         return self.__title
+    def year(self):
+        return self.__year
     def actors(self):
         return self.__actors
     def scriptwriters(self):
@@ -273,6 +297,8 @@ class Movie(HP.HTMLParser):
         self.__actors = m.actors()
         self.__related_movie_ids = \
                 [self.__get_id(each) for each in m.related_movie_urls()]
+        self.__title = m.title()
+        self.__year = m.year()
 
     def __get_id(self, douban_url):
         matched = Movie.__movie_url_pattern.match(douban_url)
@@ -353,3 +379,6 @@ if __name__ == '__main__':
     print_names(m.directors())
     print("============")
     print(m.related_movie_ids())
+    print("============")
+    print(m.year())
+    print(m.title())
