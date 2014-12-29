@@ -57,9 +57,10 @@ class MoviePageVisitor(HP.HTMLParser):
     GET_NEW_CELEBRITY = 8
     STATE_PLACEHOLDER = 9
     STATE_CAN_IGNORE = 10
-    related_movie_start = 11
+    STATE_RELATED_MOVIE_START = 11
     STATE_MOVIE_TITLE_START = 12
     STATE_MOVIE_YEAR_START = 13
+    STATE_REGION_START = 14
 
     def __init__(self, html_content):
         HP.HTMLParser.__init__(self)
@@ -69,6 +70,7 @@ class MoviePageVisitor(HP.HTMLParser):
         self.__related_movie_urls = []
         self.__title = None
         self.__year = None
+        self.__region = None
         self.__celebrities = {
                 MoviePageVisitor.STATE_DIRECTOR_START: [],
                 MoviePageVisitor.STATE_SCRIPTWRITER_START: [],
@@ -89,6 +91,8 @@ class MoviePageVisitor(HP.HTMLParser):
         return self.__title
     def year(self):
         return self.__year
+    def region(self):
+        return self.__region
 
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
@@ -100,7 +104,7 @@ class MoviePageVisitor(HP.HTMLParser):
                 self.__state.append(MoviePageVisitor.STATE_MOVIE_INFO_START)
             elif "class" in attrs_dict and \
                     attrs_dict["class"] == 'recommendations-bd':
-                self.__state.append(MoviePageVisitor.related_movie_start)
+                self.__state.append(MoviePageVisitor.STATE_RELATED_MOVIE_START)
             else:
                 pass
         elif ltag == 'span':
@@ -148,7 +152,7 @@ class MoviePageVisitor(HP.HTMLParser):
                         self.__new_celebrity["douban_id"] = attrs_dict["href"]
                     self.__new_celebrity["profession"] = role 
                     self.__state.append(MoviePageVisitor.GET_NEW_CELEBRITY)
-            elif last_state == MoviePageVisitor.related_movie_start:
+            elif last_state == MoviePageVisitor.STATE_RELATED_MOVIE_START:
                 self.__related_movie_urls.append(attrs_dict["href"])
             else:
                 pass
@@ -193,13 +197,13 @@ class MoviePageVisitor(HP.HTMLParser):
         elif ltag == 'div':
             if last_state == MoviePageVisitor.STATE_MOVIE_INFO_START:
                 self.__state.pop()
-            elif last_state == MoviePageVisitor.related_movie_start:
+            elif last_state == MoviePageVisitor.STATE_RELATED_MOVIE_START:
                 self.__state.pop()
             else:
                 pass
 
     def handle_data(self, data):
-        date = data.lstrip().rstrip()
+        data = data.lstrip().rstrip()
         last_state = self.__state[-1]
         if last_state == MoviePageVisitor.STATE_PROFESSION_GET_ROLE:
             assert self.__state[-2] == MoviePageVisitor.STATE_PROFESSION_START
@@ -209,12 +213,24 @@ class MoviePageVisitor(HP.HTMLParser):
                 self.__state[-2] = MoviePageVisitor.STATE_SCRIPTWRITER_START
             elif data == u'主演':
                 self.__state[-2] = MoviePageVisitor.STATE_ACTOR_START
+            elif data == u'制片国家/地区:':
+                # Trick: The region info is different with other fields
+                # because it's totally out of scope of span, so we have
+                # to insert STATE_REGION_START before GET_ROLE, so next
+                # space and receive it.
+                self.__state[-1] = MoviePageVisitor.STATE_REGION_START
+                self.__state.append(MoviePageVisitor.STATE_PROFESSION_GET_ROLE)
             else:
                 # Others like region, just keep STATE_PLACEHOLDER
                 self.__state[-2] = MoviePageVisitor.STATE_CAN_IGNORE
                 pass
+        elif last_state == MoviePageVisitor.STATE_REGION_START:
+            self.__region = data
+            # This state is special because it's marked for a data
+            # section, not for any tag.
+            self.__state.pop()
         elif last_state == MoviePageVisitor.GET_NEW_CELEBRITY:
-            self.__new_celebrity["name"] = data.lstrip().rstrip()
+            self.__new_celebrity["name"] = data
             # Now we get full information of a new celebrity
             prof = self.__new_celebrity["profession"]
             self.__celebrities[prof].append(self.__new_celebrity)
@@ -223,12 +239,11 @@ class MoviePageVisitor(HP.HTMLParser):
             self.__title = data
         elif last_state == MoviePageVisitor.STATE_MOVIE_YEAR_START:
             if self.__year is None:
-                self.__year = date[1:-1]
+                self.__year = data[1:-1]
                 logging.info("MoviePageVisitor: First year found from h1: %s" \
                                 % self.__year)
         else:
             pass
-
 
 class Movie(object):
     __movie_url_pattern = \
@@ -249,6 +264,7 @@ class Movie(object):
         self.__unique_id = None
         self.__title = None
         self.__year = None
+        self.__region = None
         self.__related_movies = []
         self.__celebrities = []
         if fetch_on_init:
@@ -267,6 +283,8 @@ class Movie(object):
         return self.__title
     def year(self):
         return self.__year
+    def region(self):
+        return self.__region
     def celebrities(self):
         return self.__celebrities
     def related_movies(self):
@@ -312,6 +330,7 @@ class Movie(object):
         self.__celebrities = celebrities
         self.__title = m.title()
         self.__year = m.year()
+        self.__region = m.region()
         self.__unique_id = "%s_%s" % (self.__title, self.__year)
 
     @staticmethod
@@ -427,8 +446,9 @@ class Sqlite3Host(object):
                               'place_of_birth'),
         'v1_movie_info': ('unique_id',
                           'douban_id',
-                          'name',
-                          'year'),
+                          'title',
+                          'year',
+                          'region'),
         'v1_movie_profession_map': ('movie_douban_id',
                                     'celebrity_douban_id',
                                     'profession'),
@@ -440,14 +460,13 @@ class Sqlite3Host(object):
                                 douban_id text,
                                 name text,
                                 day_of_birth text,
-                                place_of_birth text,
-                                partial integer)""",
+                                place_of_birth text)""",
         'v1_movie_info': """create table v1_movie_info (
                             unique_id text,
                             douban_id text,
                             title text,
                             year text,
-                            partial integer)""",
+                            region text)""",
         'v1_movie_profession_map': \
                 """create table v1_movie_profession_map (
                    movie_douban_id text,
@@ -527,7 +546,7 @@ class Sqlite3Host(object):
                          self.__v(obj.douban_id()), \
                          self.__v(obj.title()), \
                          self.__v(obj.year()), \
-                         self.__is_movie_partial(obj)))
+                         self.__v(obj.region())))
                 for each_celebrity in obj.celebrities():
                     celebrity_douban_id = each_celebrity.douban_id()
                     celebrity_profession = each_celebrity.profession()
@@ -540,15 +559,14 @@ class Sqlite3Host(object):
             logging.info("Sqlite3Host: Save Celebrity object: %s %s, %s" % \
                     (obj.name(), obj.douban_id(), obj.profession()))
             celebrity_insertion = """
-                insert into v1_celebrity_info values (?, ?, ?, ?, ?, ?)
+                insert into v1_celebrity_info values (?, ?, ?, ?, ?)
             """
             self.__conn.execute(celebrity_insertion, \
                     (self.__v(obj.unique_id()), \
                      self.__v(obj.douban_id()), \
                      self.__v(obj.name()), \
                      self.__v(obj.day_of_birth()), \
-                     self.__v(obj.place_of_birth()), \
-                        self.__is_celebrity_partial(obj)))
+                     self.__v(obj.place_of_birth())))
         else:
             raise UnsupportedDataException(type(obj).__name__)
         if commit:
