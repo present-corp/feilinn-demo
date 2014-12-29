@@ -399,7 +399,7 @@ class MoviePageVisitor(HP.HTMLParser):
 
 class Movie(object):
     __movie_url_pattern = \
-            re.compile(r"http:\/\/movie\.douban\.com\/subject\/([0-9][0-9]*)\/")
+            re.compile(r"http:\/\/movie\.douban\.com\/subject\/([0-9][0-9]*)\/?")
     __param_removal_pattern = \
             re.compile(r"http:\/\/movie\.douban\.com\/subject\/([0-9][0-9]*)\/(\?.*)?$")
     def __init__(self, douban_url_id, fetch_on_init = False):
@@ -517,7 +517,7 @@ class Celebrity(object):
     """
     celebrity_pattern = re.compile("\/celebrity\/([0-9][0-9]*)\/")
     __celebrity_url_pattern = \
-            re.compile(r"http:\/\/movie\.douban\.com\/celebrity\/([0-9][0-9]*)\/")
+            re.compile(r"http:\/\/movie\.douban\.com\/celebrity\/([0-9][0-9]*)\/?")
     __param_removal_pattern = \
             re.compile(r"http:\/\/movie\.douban\.com\/celebrity\/([0-9][0-9]*)\/(\?.*)?$")
     __search_pattern = re.compile(r'\/search\/.*')
