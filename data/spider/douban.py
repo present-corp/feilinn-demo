@@ -299,7 +299,7 @@ class MoviePageVisitor(HP.HTMLParser):
                     attrs_dict["property"] == "v:initialReleaseDate":
                 if "content" in attrs_dict:
                     self.__year = attrs_dict["content"]
-                    logging.info("Year found from info: %s" % self.__year)
+                    logging.debug("Year found from info: %s" % self.__year)
             else:
                 pass
         elif ltag == 'a':
@@ -394,7 +394,7 @@ class MoviePageVisitor(HP.HTMLParser):
         elif last_state == MoviePageVisitor.STATE_MOVIE_YEAR_START:
             if self.__year is None:
                 self.__year = data[1:-1]
-                logging.info("MoviePageVisitor: First year found from h1: %s" \
+                logging.debug("MoviePageVisitor: First year found from h1: %s" \
                                 % self.__year)
 
 class Movie(object):
@@ -601,7 +601,7 @@ class Celebrity(object):
         if matched is not None:
             search_id = self.__celebrity_id 
             # Oh yes, we got a search page instead of real user page.
-            logging.info("CelebritySearchPageVisitor: Second search: %s" \
+            logging.debug("CelebritySearchPageVisitor: Second search: %s" \
                     % self.__celebrity_id)
             search_url = "http://movie.douban.com%s" % self.__celebrity_id
             # Get HTML content, search for h3 tag, and get <a>
@@ -609,7 +609,6 @@ class Celebrity(object):
             c = CelebritySearchPageVisitor(parsehtml(search_url))
             # Update the id to real page
             result_url = c.search_result_url()
-            logging.info("result_url: %s" % result_url)
             # NOTE: result_url may be None when douban does not have
             # information either. In this case we have to keep
             if result_url is None:
@@ -864,15 +863,15 @@ class Sqlite3Host(object):
         cursor = self.__conn.execute(query)
         columns = cursor.fetchall()
         ids = [each[0] for each in columns]
-        logging.info("Sqlite3Host: Ids loaded: %d" % len(ids))
-        logging.info("Sqlite3Host: Drop partial movie table")
+        logging.debug("Sqlite3Host: Drop partial movie table")
         drop = "drop table v1_partial_movie_info"
         self.__conn.execute(drop)
-        logging.info("Sqlite3Host: Recreate partial movie table")
+        logging.debug("Sqlite3Host: Recreate partial movie table")
         create = Sqlite3Host.__table_creations["v1_partial_movie_info"]
         self.__conn.execute(create)
         self.__conn.commit()
-        logging.info("Sqlite3Host: Partial movie table created.")
+        logging.debug("Sqlite3Host: Partial movie table created.")
+        logging.info("Sqlite3Host: Partial movie Ids loaded: %d" % len(ids))
         return ids
 
     def __create_table(self):
@@ -1094,7 +1093,7 @@ if __name__ == '__main__':
     formatter = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     logging.basicConfig(filename=args.log, \
                         format=formatter, \
-                        level=logging.DEBUG)
+                        level=logging.INFO)
     class CompletionWaiter(object):
         def __init__(self):
             self.__condition = threading.Condition()
