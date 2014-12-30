@@ -472,6 +472,9 @@ class Movie(object):
             new_celebrity.profession(Celebrity.SCRIPTWRITER)
             new_celebrity.name(each_scriptwriter["name"])
             celebrities.append(new_celebrity)
+        for each_celebrity in celebrities:
+            each_celebrity.from_movie_douban_id(self.__movie_id)
+
         related_movies = []
         for each_urls in m.related_movie_urls():
             each_movie_douban_id = Movie.parse_movie_id(each_urls)
@@ -546,6 +549,8 @@ class Celebrity(object):
         self.__place_of_birth = None
         self.__imdb_link = None
         self.__gender = Celebrity.UNKNOWN_GENDER
+        self.__is_dead_link = True
+        self.__from_movie_douban_id = None
 
         if fetch_on_init:
             self.fetch()
@@ -579,6 +584,15 @@ class Celebrity(object):
         return self.__imdb_link
     def gender(self):
         return self.__gender
+    def is_dead_link(self):
+        return self.__is_dead_link
+    def from_movie_douban_id(self, new_id = None):
+        old_id = self.__from_movie_douban_id
+        if new_id is not None:
+            self.__from_movie_douban_id = new_id
+            return old_id
+        else:
+            return self.__from_movie_douban_id
 
     def fetch(self):
         # A special case: self.__celebrity_id can be set as a format
@@ -595,10 +609,20 @@ class Celebrity(object):
             c = CelebritySearchPageVisitor(parsehtml(search_url))
             # Update the id to real page
             result_url = c.search_result_url()
-            self.__celebrity_id = Celebrity.parse_celebrity_id(result_url)
-            self.__name = c.name()
-            logging.info("CelebritySearchPageVisitor: Redirect %s => %s" \
-                    % (search_id, self.__celebrity_id))
+            logging.info("result_url: %s" % result_url)
+            # NOTE: result_url may be None when douban does not have
+            # information either. In this case we have to keep
+            if result_url is None:
+                self.__is_dead_link = True
+                logging.warn("CelebritySearchPageVisitor: Dead link: %s" \
+                        % self.__celebrity_id)
+                # There's nothing we can do. Just return.
+                return
+            else:
+                self.__celebrity_id = Celebrity.parse_celebrity_id(result_url)
+                self.__name = c.name()
+                logging.info("CelebritySearchPageVisitor: Redirect %s => %s" \
+                        % (search_id, self.__celebrity_id))
         full_url = Celebrity.reformat_celebrity_url(self.__celebrity_id)
         c = CelebrityPageVisitor(parsehtml(full_url))
         self.__gender = c.gender()
@@ -606,6 +630,7 @@ class Celebrity(object):
         self.__day_of_death = c.day_of_death()
         self.__place_of_birth = c.place_of_birth()
         self.__imdb_link = c.imdb_link()
+        self.__is_dead_link = False
         # NOTE: We don't update profession. In a lot of cases, one
         # person may have multiple professions. So we leave it to
         # movie_profession_map table.
@@ -655,7 +680,10 @@ class Sqlite3Host(object):
         'v1_movie_profession_map': ('movie_douban_id',
                                     'celebrity_douban_id',
                                     'profession'),
-        'v1_partial_movie_info': ('douban_id')
+        'v1_partial_movie_info': ('douban_id'),
+        'v1_dead_link_celebrity_info': ('douban_id',
+                                        'name',
+                                        'from_movie_douban_id')
     }
     __table_creations = {
         'v1_celebrity_info': """create table v1_celebrity_info (
@@ -679,7 +707,12 @@ class Sqlite3Host(object):
                    celebrity_douban_id text,
                    profession integer)""",
         'v1_partial_movie_info': """create table v1_partial_movie_info (
-                            douban_id text)"""
+                            douban_id text)""",
+        'v1_dead_link_celebrity_info': \
+                """create table v1_dead_link_celebrity_info (
+                   douban_id text,
+                   name text,
+                   from_movie_douban_id text)"""
 
         }
     def __init__(self, sqlite_db_path):
@@ -720,8 +753,9 @@ class Sqlite3Host(object):
         if self.__conn is None:
             raise DatabaseNotStartedException()
         if type(obj) is Movie:
-            logging.info("Sqlite3Host: Save Movie: %s %s" % \
-                    (obj.title(), obj.douban_id()))
+            logging.info("Sqlite3Host: Save Movie: %s %s, next_fetch = %d" % \
+                    (obj.title(), obj.douban_id(), \
+                     self.__is_movie_partial(obj)))
             movie_insertion = """
                 insert into v1_movie_info values (?, ?, ?, ?, ?)
             """
@@ -762,33 +796,35 @@ class Sqlite3Host(object):
                              self.__v(celebrity_profession)))
 
         elif type(obj) is Celebrity:
-            logging.info("Sqlite3Host: Save Celebrity: %s %s, %s" % \
-                    (obj.name(), obj.douban_id(), obj.profession()))
-            celebrity_insertion = """
-                insert into v1_celebrity_info values (?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            self.__conn.execute(celebrity_insertion, \
-                    (self.__v(obj.unique_id()), \
-                     self.__v(obj.douban_id()), \
-                     self.__v(obj.name()), \
-                     self.__v(obj.gender()), \
-                     self.__v(obj.day_of_birth()), \
-                     self.__v(obj.day_of_death()), \
-                     self.__v(obj.place_of_birth()), \
-                     self.__v(obj.imdb_link())))
+            logging.info("Sqlite3Host: Save Celebrity: %s %s, %s, dead link = %d" % \
+                    (obj.name(), obj.douban_id(), obj.profession(), \
+                        obj.is_dead_link()))
+            if not obj.is_dead_link():
+                celebrity_insertion = """
+                    insert into v1_celebrity_info values (?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                self.__conn.execute(celebrity_insertion, \
+                        (self.__v(obj.unique_id()), \
+                         self.__v(obj.douban_id()), \
+                         self.__v(obj.name()), \
+                         self.__v(obj.gender()), \
+                         self.__v(obj.day_of_birth()), \
+                         self.__v(obj.day_of_death()), \
+                         self.__v(obj.place_of_birth()), \
+                         self.__v(obj.imdb_link())))
+            else: # Dead link
+                celebrity_dead_link_insertion = """
+                    insert into v1_dead_link_celebrity_info values (?, ?, ?)
+                """
+                self.__conn.execute(celebrity_dead_link_insertion, \
+                        (self.__v(obj.douban_id()), \
+                         self.__v(obj.name()), \
+                         self.__v(obj.from_movie_douban_id())))
         else:
             raise UnsupportedDataException(type(obj).__name__)
         if commit:
             self.__conn.commit()
 
-    def __is_celebrity_partial(self, obj):
-        # This version we use a very weak condition to predict celebrity
-        # to be "completed" (thus, partial == False), so it won't be
-        # reloaded. It will be changed in the future.
-        if obj.name() is not None and obj.douban_id() is not None:
-            return 0 # partial == False
-        else:
-            return 1
     def __is_movie_partial(self, obj):
         if obj.title() is not None and obj.douban_id() is not None \
                 and obj.year() is not None:
@@ -917,19 +953,25 @@ class Spider(object):
         self.__stop_sign.notify()
         self.__stop_sign.release()
 
-    def __worker_thread(self):
-        logging.info("Worker: starts.")
-        self.__stop_sign.acquire()
-        logging.info("Worker: lock acquired.")
+    def __worker_init_database(self):
         try:
             self.__db_host.start()
             # Load pending items from last fetch.
             # NOTE: We don't keep tracking parsed items from last fetch.
-            self.__index["movies"] += self.__db_host.load_partial_movie_ids()
+            self.__index["movies"] += \
+                    self.__db_host.load_partial_movie_ids()
             self.__index["parsed_movies"] = set([])
             self.__index["parsed_celebrities"] = set([])
+            logging.info("Database initialized successfully.")
+        except Exception as e:
+            logging.error("FATAL: Database is wrong. Can't continue.")
+            return False
+        return True
 
-            while len(self.__index["movies"]) != 0:
+    def __worker_main_loop(self):
+        success = False
+        while len(self.__index["movies"]) != 0:
+            try:
                 # After every fetch, wait for 2 secs so caller can stop.
                 self.__stop_sign.wait(self.__fetch_gap)
                 if self.__started is False:
@@ -956,6 +998,8 @@ class Spider(object):
                     # Besides saving movie information, we also need to save
                     # celebrities indepdently
                     for each_celebrity in new_movie.celebrities():
+                        # If may fail because douban may have no
+                        # information either.
                         each_celebrity.fetch()
                         each_id = each_celebrity.douban_id()
                         if each_id not in self.__index["parsed_celebrities"]:
@@ -964,8 +1008,19 @@ class Spider(object):
                     # Movie must be save AFTER celebrities because the
                     # path of celebrities can be updated on fetch().
                     self.__db_host.save(new_movie)
+            except Exception as e:
+                import traceback
+                tb = traceback.format_exc()
+                logging.error("FATAL: Exception from worker: %s (recovered)" % tb)
+                success = True
+            if success:
+                logging.info("Worker: Main loop completes.")
+            else:
+                logging.error("Worker: Main loop completes with errors.")
+            return success
 
-
+    def __worker_save_pending_items(self):
+        try:
             # We have fetched all movies and celebrities. Stop.
             pending_movies = len(self.__index["movies"])
             parsed_movies = len(self.__index["parsed_movies"])
@@ -979,19 +1034,37 @@ class Spider(object):
                 logging.info("Worker: Dedup: %d IDs left." % len(dedup_ids))
                 saved_movies = [Movie(each) for each in dedup_ids]
                 self.__db_host.save_list(saved_movies)
-            self.__started = False
+            logging.error("Pending items saved to disk.")
         except Exception as e:
-            import traceback
-            tb = traceback.format_exc()
-            logging.error("FATAL: Exception from workder: %s" % tb)
+            logging.error("Failure when saving pending items.")
+            return False
+        return True
+    def __invoke_callback(self):
         try:
             for each_callback in self.__complete_callbacks:
                 if each_callback is not None:
                     each_callback()
-        finally:
+        except Exception as e:
+            logging.error("Callback is not invoked successfully.")
             logging.info("Worker: Callback invoked.")
-        self.__stop_sign.release()
-        logging.info("Worker: Complete. Bye.")
+
+    def __worker_thread(self):
+        logging.info("Worker: starts.")
+        self.__stop_sign.acquire()
+        self.__started = True
+        logging.info("Worker: lock acquired. Start working.")
+        try:
+            if not self.__worker_init_database():
+                return
+            # Data base is initialized. Enter main loop.
+            self.__worker_main_loop()
+            self.__worker_save_pending_items()
+        finally:
+            self.__invoke_callback()
+            self.__started = False
+            self.__stop_sign.release()
+            logging.info("Worker: Complete. Bye.")
+
 
 if __name__ == '__main__':
     import argparse
@@ -1047,8 +1120,10 @@ if __name__ == '__main__':
             self.__spider = spider
             self.__waiter = waiter
         def __call__(self, signum, frame):
+            logging.info("CTRL-C captured. Save result...")
             self.__spider.stop()
             self.__waiter.wait()
+            logging.info("Result saved. Exit.")
     try:
         db = Sqlite3Host(args.db)
         maxmovies = int(args.maxmovies)
