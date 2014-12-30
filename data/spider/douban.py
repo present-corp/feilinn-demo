@@ -454,7 +454,7 @@ class Movie(object):
         Perform a fetch from Douban URL and parse received data from
         HTML content. After fetch all fields are updated.
         """
-        logging.info("MoviePageVisitor: Fetching: %s", self.__movie_id)
+        logging.info("Movie: Fetching: %s", self.__movie_id)
         m = MoviePageVisitor(parsehtml(self.url()))
         celebrities = []
         for each_director in m.directors():
@@ -597,11 +597,12 @@ class Celebrity(object):
     def fetch(self):
         # A special case: self.__celebrity_id can be set as a format
         # like /search/name. We must fetch it to get result.
+        logging.info("Celebrity: Fetching: %s", self.__celebrity_id)
         matched = Celebrity.__search_pattern.match(self.__celebrity_id)
         if matched is not None:
             search_id = self.__celebrity_id 
             # Oh yes, we got a search page instead of real user page.
-            logging.debug("CelebritySearchPageVisitor: Second search: %s" \
+            logging.debug("Celebrity: Second search: %s" \
                     % self.__celebrity_id)
             search_url = "http://movie.douban.com%s" % self.__celebrity_id
             # Get HTML content, search for h3 tag, and get <a>
@@ -613,14 +614,14 @@ class Celebrity(object):
             # information either. In this case we have to keep
             if result_url is None:
                 self.__is_dead_link = True
-                logging.warn("CelebritySearchPageVisitor: Dead link: %s" \
+                logging.warn("Celebrity: Dead link: %s" \
                         % self.__celebrity_id)
                 # There's nothing we can do. Just return.
                 return
             else:
                 self.__celebrity_id = Celebrity.parse_celebrity_id(result_url)
                 self.__name = c.name()
-                logging.info("CelebritySearchPageVisitor: Redirect %s => %s" \
+                logging.info("Celebrity: Redirect %s => %s" \
                         % (search_id, self.__celebrity_id))
         full_url = Celebrity.reformat_celebrity_url(self.__celebrity_id)
         c = CelebrityPageVisitor(parsehtml(full_url))
@@ -752,7 +753,7 @@ class Sqlite3Host(object):
         if self.__conn is None:
             raise DatabaseNotStartedException()
         if type(obj) is Movie:
-            logging.info("Sqlite3Host: Save Movie: %s %s, next_fetch = %d" % \
+            logging.debug("Sqlite3Host: Save Movie: %s %s, next_fetch = %d" % \
                     (obj.title(), obj.douban_id(), \
                      self.__is_movie_partial(obj)))
             movie_insertion = """
@@ -795,7 +796,7 @@ class Sqlite3Host(object):
                              self.__v(celebrity_profession)))
 
         elif type(obj) is Celebrity:
-            logging.info("Sqlite3Host: Save Celebrity: %s %s, %s, dead link = %d" % \
+            logging.debug("Sqlite3Host: Save Celebrity: %s %s, %s, dead link = %d" % \
                     (obj.name(), obj.douban_id(), obj.profession(), \
                         obj.is_dead_link()))
             if not obj.is_dead_link():
