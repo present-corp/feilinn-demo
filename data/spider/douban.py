@@ -969,7 +969,7 @@ class Spider(object):
         return True
 
     def __worker_main_loop(self):
-        success = False
+        success = True
         while len(self.__index["movies"]) != 0:
             try:
                 # After every fetch, wait for 2 secs so caller can stop.
@@ -1012,12 +1012,12 @@ class Spider(object):
                 import traceback
                 tb = traceback.format_exc()
                 logging.error("FATAL: Exception from worker: %s (recovered)" % tb)
-                success = True
-            if success:
-                logging.info("Worker: Main loop completes.")
-            else:
-                logging.error("Worker: Main loop completes with errors.")
-            return success
+                success = False
+        if success:
+            logging.info("Worker: Main loop completes.")
+        else:
+            logging.error("Worker: Main loop completes with errors.")
+        return success
 
     def __worker_save_pending_items(self):
         try:
@@ -1034,7 +1034,7 @@ class Spider(object):
                 logging.info("Worker: Dedup: %d IDs left." % len(dedup_ids))
                 saved_movies = [Movie(each) for each in dedup_ids]
                 self.__db_host.save_list(saved_movies)
-            logging.error("Pending items saved to disk.")
+            logging.info("Pending items saved to disk.")
         except Exception as e:
             logging.error("Failure when saving pending items.")
             return False
