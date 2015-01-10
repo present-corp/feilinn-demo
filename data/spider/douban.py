@@ -10,6 +10,9 @@ import threading
 # Python 2/3 compatibility hack: Import correct libraries
 ver = sys.version[0]
 if ver == '2':
+    # We must keep a timout for urllib.urlopen(), for a known
+    # hanging issue from link below (yes, still bugs me at 2015)
+    # https://mail.python.org/pipermail/python-bugs-list/2006-February/031871.html
     import urllib2 as UL
     import HTMLParser as HP
 elif ver == '3':
@@ -32,13 +35,14 @@ class UrlParseException(Exception):
     def url(self):
         return self.__url
 
-def parsehtml(url):
+def parsehtml(url, timeout_secs = 5):
     """
-    parsehtml(url)
+    parsehtml(url, timeout_secs = 5)
 
     A helper function to receive content from given URL.
     """
-    response = UL.urlopen(url)
+    # Note: it may cause exception.
+    response = UL.urlopen(url, timeout=timeout_secs)
     encoding = response.headers.getparam('charset')
     content = response.read().decode(encoding)
     response.close()
@@ -456,6 +460,7 @@ class Movie(object):
         """
         logging.info("Movie: Fetching: %s", self.__movie_id)
         m = MoviePageVisitor(parsehtml(self.url()))
+        logging.info("HTML content fetched: %s", self.__movie_id)
         celebrities = []
         for each_director in m.directors():
             new_celebrity = Celebrity(each_director["douban_id"])
@@ -753,7 +758,7 @@ class Sqlite3Host(object):
         if self.__conn is None:
             raise DatabaseNotStartedException()
         if type(obj) is Movie:
-            logging.debug("Sqlite3Host: Save Movie: %s %s, next_fetch = %d" % \
+            logging.info("Sqlite3Host: Save Movie: %s %s, retry  = %d" % \
                     (obj.title(), obj.douban_id(), \
                      self.__is_movie_partial(obj)))
             movie_insertion = """
@@ -796,7 +801,7 @@ class Sqlite3Host(object):
                              self.__v(celebrity_profession)))
 
         elif type(obj) is Celebrity:
-            logging.debug("Sqlite3Host: Save Celebrity: %s %s, %s, dead link = %d" % \
+            logging.info("Sqlite3Host: Save Celebrity: %s %s, %s, dead link = %d" % \
                     (obj.name(), obj.douban_id(), obj.profession(), \
                         obj.is_dead_link()))
             if not obj.is_dead_link():
@@ -823,7 +828,9 @@ class Sqlite3Host(object):
         else:
             raise UnsupportedDataException(type(obj).__name__)
         if commit:
+            logging.debug("Sqlite3Host: Committing.")
             self.__conn.commit()
+        logging.info("Sqlite3Host: New column added.")
 
     def __is_movie_partial(self, obj):
         if obj.title() is not None and obj.douban_id() is not None \
@@ -947,8 +954,11 @@ class Spider(object):
         """
         if self.__started is False:
             # No need to stop twice.
+            logging.warn("Already stopped. No need to do it twice.")
             return
+        logging.info("Calling spider.stop().")
         self.__stop_sign.acquire() # Post a condition so they know
+        logging.info("Lock acquired. Update status.")
         self.__started = False
         self.__stop_sign.notify()
         self.__stop_sign.release()
@@ -977,8 +987,10 @@ class Spider(object):
                 if self.__started is False:
                     # OK if somebody asks us to stop. Save all pending list
                     # and exit.
+                    logging.info("Called for stop. Exit.")
                     break
                 else:
+                    logging.info("Continue...")
                     if self.__max_movies > 0:
                         parsed_movies = len(self.__index["parsed_movies"])
                         if self.__max_movies == parsed_movies:
@@ -987,27 +999,56 @@ class Spider(object):
                     # We can continue. Note: stop sign is grabbed by worker
                     # so caller can't stop it at this moment. This is to
                     # make sure a fetch can't be interrupted.
-                    new_movie_id = self.__index["movies"].pop()
-                    new_movie = Movie(new_movie_id, fetch_on_init = True)
-                    self.__index["parsed_movies"].add(new_movie.douban_id())
+
+                    # Always insert from last but get from first, so
+                    # it's a queue, indeed.
+                    new_movie_id = self.__index["movies"][0]
+                    del self.__index["movies"][0]
+                    # NOTE: With a known issue, the URL fetching may
+                    # result in an exception.
+                    try:
+                        new_movie = Movie(new_movie_id, \
+                                          fetch_on_init = True)
+                    except Exception as e:
+                        logging.error("Movie %s fails. Add to end." % \
+                                new_movie_id)
+                        self.__index["movies"].append(new_movie_id)
+                        # No need to try this movie again. Keep it
+                        # in list and try it later.
+                        continue
+                    logging.info("Movie %s fetched." % new_movie_id)
+                    logging.info("Keep related movies.")
                     for each_related_movie in new_movie.related_movies():
                         each_movie_id = each_related_movie.douban_id()
-                        if each_movie_id not in self.__index["parsed_movies"]:
+                        if each_movie_id not in \
+                                self.__index["parsed_movies"]:
                             # The item is not retrived. Add to list.
                             self.__index["movies"].append(each_movie_id)
-                    # Besides saving movie information, we also need to save
-                    # celebrities indepdently
+                    logging.info("Keep celebrities.")
+                    # Besides saving movie information, we also need to
+                    # save celebrities indepdently
                     for each_celebrity in new_movie.celebrities():
                         # If may fail because douban may have no
                         # information either.
-                        each_celebrity.fetch()
+                        try:
+                            each_celebrity.fetch()
+                        except Exception as e:
+                            logging.error("Fails on fetching celebrity.")
+                            # It means an character is not correctly
+                            # parsed.
+                            # Keep the celebrity into unresolved list.
                         each_id = each_celebrity.douban_id()
-                        if each_id not in self.__index["parsed_celebrities"]:
+                        if each_id not in \
+                                self.__index["parsed_celebrities"]:
                             self.__db_host.save(each_celebrity)
                             self.__index["parsed_celebrities"].add(each_id)
                     # Movie must be save AFTER celebrities because the
                     # path of celebrities can be updated on fetch().
                     self.__db_host.save(new_movie)
+                    logging.info("Movie: %s saved" % new_movie_id)
+                    self.__index["parsed_movies"].add(\
+                            new_movie.douban_id())
+
             except Exception as e:
                 import traceback
                 tb = traceback.format_exc()
@@ -1101,7 +1142,9 @@ if __name__ == '__main__':
             self.__done = False
         def __call__(self):
             # Call from worker thread
+            logging.info("Waiter: Call for stop from worker thread.")
             self.__condition.acquire()
+            logging.info("Waiter: Set status is done.")
             self.__done = True
             self.__condition.notify()
             self.__condition.release()
